@@ -1,0 +1,55 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Blueprint palette: white card on cool blue-gray, electric blue accent. -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f4f7fa"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#2563eb" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Clip cards to the TV screen so they peek behind the bezel -->
+    <clipPath id="screen-clip">
+      <rect x="172" y="272" width="680" height="416" rx="14"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background with rounded corners (iOS masks its own) -->
+  <rect width="1024" height="1024" rx="180" fill="url(#bg)"/>
+  <!-- Subtle accent glow behind the logo -->
+  <circle cx="512" cy="500" r="380" fill="url(#glow)"/>
+
+  <!-- TV body -->
+  <rect x="120" y="220" width="784" height="520" rx="36" fill="#ffffff" stroke="#2563eb" stroke-width="28"/>
+  <!-- Inner screen recess -->
+  <rect x="172" y="272" width="680" height="416" rx="14" fill="#f4f7fa"/>
+
+  <!-- Cards clipped to screen -->
+  <g clip-path="url(#screen-clip)">
+    <!-- Left peeking card -->
+    <g transform="translate(120,326) rotate(-6)">
+      <rect x="0" y="0" width="180" height="296" rx="14" fill="#ffffff" stroke="#dde6ef" stroke-width="6"/>
+      <rect x="14" y="14" width="152" height="200" rx="6" fill="#f4f7fa"/>
+      <polygon points="78,98 116,126 78,154" fill="#dde6ef"/>
+    </g>
+    <!-- Right peeking card -->
+    <g transform="translate(724,326) rotate(6)">
+      <rect x="0" y="0" width="180" height="296" rx="14" fill="#ffffff" stroke="#dde6ef" stroke-width="6"/>
+      <rect x="14" y="14" width="152" height="200" rx="6" fill="#f4f7fa"/>
+      <polygon points="78,98 116,126 78,154" fill="#dde6ef"/>
+    </g>
+    <!-- Center card (front, highlighted) -->
+    <g transform="translate(382,300)">
+      <rect x="0" y="0" width="260" height="360" rx="18" fill="#ffffff" stroke="#2563eb" stroke-width="8"/>
+      <rect x="18" y="18" width="224" height="240" rx="8" fill="#f4f7fa"/>
+      <polygon points="108,116 168,148 108,180" fill="#2563eb"/>
+      <rect x="18" y="280" width="180" height="14" rx="6" fill="#64748b" opacity="0.55"/>
+      <rect x="18" y="304" width="124" height="10" rx="5" fill="#64748b" opacity="0.4"/>
+    </g>
+  </g>
+
+  <!-- Stand -->
+  <rect x="430" y="740" width="164" height="22" rx="6" fill="#2563eb"/>
+  <rect x="380" y="762" width="264" height="20" rx="10" fill="#2563eb"/>
+</svg>

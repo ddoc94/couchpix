@@ -1,0 +1,24 @@
+{
+  "name": "netpix-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iOS/Android shell that wraps the web app build via Capacitor",
+  "scripts": {
+    "build:web": "cd ../web && npm run build",
+    "sync": "npm run build:web && cap sync",
+    "pod:install": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install --project-directory=ios/App",
+    "ios": "npm run sync && cap open ios",
+    "android": "npm run sync && cap open android",
+    "ios:run": "npm run sync && cap run ios",
+    "android:run": "npm run sync && cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0",
+    "typescript": "^6.0.3"
+  }
+}

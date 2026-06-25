@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Capacitor sync artifacts (regenerated from ../netpix-app/dist on every `cap sync`)
+ios/App/App/public/
+android/app/src/main/assets/public/
+
+# iOS build outputs
+ios/App/Pods/
+ios/App/build/
+ios/App/.swiftpm/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+*.keystore
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*

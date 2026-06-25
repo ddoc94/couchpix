@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.wrangler/
+
+# Deploy / CLI local state (linked to live projects, not source)
+.vercel/
+
+# Secrets — never commit. Worker secrets live in Cloudflare.
+.dev.vars
+.env
+.env.*
+*.local
+
+# Claude Code tooling
+.claude/
+
+# iOS / Capacitor generated artifacts (regenerate via pod install / cap sync)
+apps/mobile/ios/App/Pods/
+apps/mobile/ios/App/build/
+apps/mobile/ios/App/App/public/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# OS
+.DS_Store

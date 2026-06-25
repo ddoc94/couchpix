@@ -1,0 +1,9 @@
+{
+  "name": "netpix-proxy",
+  "account_id": "69e807002f9aeae451616bc6f82b59e4",
+  "main": "src/index.js",
+  "compatibility_date": "2024-01-01",
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "c8762b2f0f28445bbb6e26e0e74bf96f" }
+  ]
+}

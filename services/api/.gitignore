@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Wrangler build output & cache
+.wrangler/
+
+# Secrets / local env (Worker secrets live in Cloudflare, never in the repo)
+.dev.vars
+.env
+.env.*
+*.local
+
+# OS cruft
+.DS_Store
+
+# Frontend & mobile live in their own repos and deploy independently
+netpix-app/
+netpix-mobile/

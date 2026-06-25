@@ -1,0 +1,33 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  height: 100%;
+  /* dvh accounts for iOS Safari's collapsing address bar */
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  background: #f4f7fa;
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Prevent text selection during swipe gestures. touch-action: pan-y lets the
+   browser handle vertical scrolling natively while we capture horizontal swipes
+   in JS — that way users can still scroll the card content on mobile. */
+.swipe-card {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+}
