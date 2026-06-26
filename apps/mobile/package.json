@@ -5,7 +5,7 @@
   "description": "iOS/Android shell that wraps the web app build via Capacitor",
   "scripts": {
     "build:web": "cd ../web && npm run build",
-    "sync": "npm run build:web && cap sync",
+    "sync": "npm run build:web && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 cap sync",
     "pod:install": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install --project-directory=ios/App",
     "ios": "npm run sync && cap open ios",
     "android": "npm run sync && cap open android",
