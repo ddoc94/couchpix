@@ -64,36 +64,54 @@ async function seedCompletedSession(request, movieCount = 4) {
   });
 }
 
+/** Open the app and tap the Movie Night activity tile to reach its sub-home
+ *  (where Create a Session / Enter Code live). The home screen now leads with
+ *  activity tiles — Movie Night, Food Night, Unhinged Questions — so the
+ *  movie-night flow starts one tap deeper than it used to. */
+async function gotoMovieNight(page) {
+  await page.goto('/');
+  await page.getByRole('button', { name: /movie night/i }).click();
+}
+
 // ─── Home screen ─────────────────────────────────────────────────────────────
 
-test('home screen renders create and join buttons', async ({ page }) => {
+test('home screen renders activity tiles', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'NetPix' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /create a session/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /join with session code/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /movie night/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /food night/i })).toBeVisible();
   // Demo mode button should be gone
   await expect(page.getByText(/demo mode/i)).not.toBeVisible();
+});
+
+test('movie night screen renders create and join options', async ({ page }) => {
+  await gotoMovieNight(page);
+  await expect(page.getByRole('heading', { name: 'Movie Night' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /create a session/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /enter code/i })).toBeVisible();
 });
 
 // ─── Setup flow ───────────────────────────────────────────────────────────────
 
 test('organizer can create a session and reach lobby', async ({ page }) => {
-  await page.goto('/');
+  await gotoMovieNight(page);
   await page.getByRole('button', { name: /create a session/i }).click();
   await expect(page.getByText(/your name/i)).toBeVisible();
 
   await page.getByPlaceholder(/e\.g\. Alex/i).fill('Alice');
   await page.getByRole('button', { name: /create session/i }).click();
 
-  // Should land on lobby with a session code visible
+  // Should land on the lobby: session code, participant list, and (as admin)
+  // the Start Session button.
   await expect(page.getByText(/session code/i)).toBeVisible();
-  await expect(page.getByText(/waiting room/i)).toBeVisible();
+  await expect(page.getByText(/participants/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /start session/i })).toBeVisible();
   const code = await page.locator('[style*="font-family: monospace"]').first().textContent();
   expect(code?.trim()).toMatch(/^[A-Z0-9]{6}$/);
 });
 
 test('QR code is visible in lobby', async ({ page }) => {
-  await page.goto('/');
+  await gotoMovieNight(page);
   await page.getByRole('button', { name: /create a session/i }).click();
   await page.getByPlaceholder(/e\.g\. Alex/i).fill('Alice');
   await page.getByRole('button', { name: /create session/i }).click();
@@ -107,20 +125,21 @@ test('QR code is visible in lobby', async ({ page }) => {
 test('second user can join by session code', async ({ page, request }) => {
   const session = await seedSession(request);
 
-  await page.goto('/');
-  await page.getByRole('button', { name: /join with session code/i }).click();
+  await gotoMovieNight(page);
+  await page.getByRole('button', { name: /enter code/i }).click();
 
   await page.getByPlaceholder(/e\.g\. Jordan/i).fill('Bob');
   await page.locator('input[maxlength="6"]').fill(session.id);
   await page.getByRole('button', { name: /join session/i }).click();
 
-  await expect(page.getByText(/waiting room/i)).toBeVisible();
+  // Bob lands in the lobby as a non-admin participant
+  await expect(page.getByText(/waiting for the organizer/i)).toBeVisible();
   await expect(page.getByText('Bob')).toBeVisible();
 });
 
 test('joining a non-existent session shows error', async ({ page }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: /join with session code/i }).click();
+  await gotoMovieNight(page);
+  await page.getByRole('button', { name: /enter code/i }).click();
 
   await page.getByPlaceholder(/e\.g\. Jordan/i).fill('Bob');
   await page.locator('input[maxlength="6"]').fill('ZZZZZZ');
@@ -308,12 +327,12 @@ test('results screen has new round and new session buttons', async ({ page, requ
 // ─── Reset / header ───────────────────────────────────────────────────────────
 
 test('reset button returns to home', async ({ page }) => {
-  await page.goto('/');
+  await gotoMovieNight(page);
   await page.getByRole('button', { name: /create a session/i }).click();
   await page.getByPlaceholder(/e\.g\. Alex/i).fill('Alice');
   await page.getByRole('button', { name: /create session/i }).click();
 
-  await expect(page.getByText(/waiting room/i)).toBeVisible();
+  await expect(page.getByText(/session code/i)).toBeVisible();
   await page.getByRole('button', { name: /reset/i }).click();
 
   await expect(page.getByRole('heading', { name: 'NetPix' })).toBeVisible();
