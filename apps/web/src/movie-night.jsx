@@ -1044,13 +1044,13 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
         <ActivityTile
           icon="🎬"
           title="NetPix"
-          description="Find the right movie for everyone"
+          description="Pick the right movie for everyone"
           onClick={onStartMovies}
         />
         <ActivityTile
           icon="🍔"
           title="FoodPix"
-          description="Find the right takeout for everyone"
+          description="Pick the right takeout for everyone"
           onClick={onStartFood}
         />
 
