@@ -865,7 +865,9 @@ export default function MovieNightApp() {
           ...s,
           restaurants: [],
           foodReady: false,
-          participants: (s.participants || []).map(p => ({ ...p, prefsDone: false, votes: {}, done: false, cuisines: [], vetoCuisines: [] })),
+          heartPool: undefined,
+          heartRound: undefined,
+          participants: (s.participants || []).map(p => ({ ...p, prefsDone: false, votes: {}, done: false, heart: undefined, cuisines: [], vetoCuisines: [] })),
         };
         await putSession(reset);
         syncSession(reset);
@@ -3681,7 +3683,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
 }
 
 // ─── Restaurant Card (tap-to-vote, no drag) ───────────────────────────────────
-function RestaurantCard({ r, index, total }) {
+function RestaurantCard({ r, index, total, hideCount }) {
   const [imgError, setImgError] = useState(false);
   const price = PRICE_LABEL[r.priceLevel];
   return (
@@ -3741,7 +3743,7 @@ function RestaurantCard({ r, index, total }) {
           )}
         </div>
       </div>
-      <div style={{ textAlign:"center", marginTop:12, color:C.muted, fontSize:13 }}>{index + 1} of {total}</div>
+      {!hideCount && <div style={{ textAlign:"center", marginTop:12, color:C.muted, fontSize:13 }}>{index + 1} of {total}</div>}
     </div>
   );
 }
@@ -3807,27 +3809,87 @@ function FoodSwipingScreen({ session, userId, onDone }) {
   );
 }
 
-// ─── Food Results (tally yes-votes, show winner) ──────────────────────────────
+// Compute the pool of restaurants the group "agreed" on, mirroring the movie
+// yes-pool logic: prefer unanimous yes, else a real majority, else any spot that
+// got at least one yes. Returned restaurants are ranked yeses-then-rating.
+function foodAgreedPool(s) {
+  const participants = s.participants || [];
+  const restaurants = s.restaurants || [];
+  const totalP = participants.length;
+  const yesOf = r => participants.filter(p => p.votes?.[r.id] === "yes").length;
+  const rank = (a, b) => (yesOf(b) - yesOf(a)) || ((b.rating || 0) - (a.rating || 0));
+  const unanimous = restaurants.filter(r => totalP > 0 && yesOf(r) === totalP);
+  if (unanimous.length) return unanimous.sort(rank);
+  const majority = restaurants.filter(r => yesOf(r) > 1 && yesOf(r) < totalP).sort(rank);
+  if (totalP > 2 && majority.length) return majority;
+  return restaurants.filter(r => yesOf(r) > 0).sort(rank);
+}
+
+// ─── Food Results (agree → narrow with hearts → final picks) ──────────────────
+// Mirrors the movie ResultsScreen flow: surface every agreed-upon restaurant,
+// then run heart rounds (each person hearts one favourite, survivors advance)
+// until ≤2 remain — instead of crowning a single winner.
 function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome }) {
   const [latest, setLatest] = useState(session);
+  const [phase, setPhase] = useState("waiting"); // "waiting" | "heart" | "final"
+  const [heartPool, setHeartPool] = useState(null);
+  const [myHeart, setMyHeart] = useState(null);
+  const [heartRound, setHeartRound] = useState(1);
   const navedRef = useRef(false); // ensure we navigate to a new round only once
 
-  // Poll the session (adaptive cadence). We arrive here with foodReady === true; when
-  // the host starts a new round they reset foodReady → false, which we detect to pull
-  // everyone (including remote participants) back to the preferences screen to re-pick.
+  // Poll KV. heartPool/heartRound live on the session so every device shares the
+  // same canonical round state; local state mirrors it on each poll.
   useAdaptivePoll(session.id, (s) => {
     setLatest(s);
+    if (Array.isArray(s.heartPool)) setHeartPool(s.heartPool);
+    if (typeof s.heartRound === "number") setHeartRound(s.heartRound);
+
+    // Host started a new round (foodReady reset) → pull everyone back to prefs.
     if (s.foodReady === false && !navedRef.current) {
       navedRef.current = true;
       onRoundReset?.(s);
+      return;
+    }
+
+    const allSwipeDone = (s.participants || []).every(p => p.done);
+    if (!allSwipeDone) { setPhase("waiting"); return; }
+
+    const agreedIds = foodAgreedPool(s).map(r => r.id);
+    if (agreedIds.length <= 2) { setPhase("final"); return; }
+
+    const allHeartDone = s.participants.every(p => p.heart !== undefined);
+    if (!allHeartDone) {
+      setPhase("heart");
+      if (!Array.isArray(s.heartPool)) {
+        const initial = { ...s, heartPool: agreedIds, heartRound: 1 };
+        putSession(initial).then(() => { setLatest(initial); setHeartPool(initial.heartPool); setHeartRound(1); });
+      }
+      return;
+    }
+
+    // All hearts in — compute survivors from the canonical pool.
+    const pool = Array.isArray(s.heartPool) && s.heartPool.length ? s.heartPool : agreedIds;
+    const counts = {};
+    pool.forEach(id => { counts[id] = s.participants.filter(p => p.heart === id).length; });
+    const max = Math.max(...Object.values(counts), 0);
+    const survivors = pool.filter(id => (counts[id] ?? 0) === max && max > 0);
+    const isStuck = survivors.length === pool.length;
+
+    if (survivors.length > 2 && !isStuck) {
+      const nextRound = (s.heartRound || 1) + 1;
+      const resetSession = { ...s, heartPool: survivors, heartRound: nextRound, participants: s.participants.map(p => ({ ...p, heart: undefined })) };
+      putSession(resetSession).then(() => { setLatest(resetSession); setHeartPool(survivors); setMyHeart(null); setHeartRound(nextRound); setPhase("heart"); });
+    } else {
+      setPhase("final");
     }
   });
 
   const participants = latest.participants || [];
   const restaurants = latest.restaurants || [];
-  const notDone = participants.filter(p => !p.done);
 
-  if (notDone.length) {
+  // ── Waiting for swipes ──
+  if (phase === "waiting") {
+    const notDone = participants.filter(p => !p.done);
     return (
       <div style={{ paddingTop:40, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
         <div style={{ fontSize:50 }}>⏳</div>
@@ -3838,16 +3900,10 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     );
   }
 
-  // Tally yes votes per restaurant; rank by most yeses, break ties by rating.
-  const ranked = restaurants
-    .map(r => ({
-      r,
-      yes: participants.filter(p => p.votes?.[r.id] === "yes").length,
-    }))
-    .filter(x => x.yes > 0)
-    .sort((a, b) => b.yes - a.yes || (b.r.rating || 0) - (a.r.rating || 0));
+  const agreed = foodAgreedPool(latest);
 
-  if (!ranked.length) {
+  // ── No agreement ──
+  if (!agreed.length) {
     return (
       <div style={{ paddingTop:40, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
         <div style={{ fontSize:50 }}>😕</div>
@@ -3861,41 +3917,103 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     );
   }
 
-  const winner = ranked[0];
-  const runnersUp = ranked.slice(1, 4);
-  const everyone = winner.yes === participants.length && participants.length > 1;
+  const currentPool = (heartPool || agreed.map(r => r.id))
+    .map(id => restaurants.find(r => r.id === id))
+    .filter(Boolean);
+
+  // ── Heart phase: narrow the agreed pool ──
+  if (phase === "heart") {
+    const myHeartId = myHeart ?? participants.find(p => p.id === userId)?.heart;
+    const alreadyHearted = myHeartId !== undefined && myHeartId !== null;
+    const stillWaiting = participants.filter(p => !p.isBot && p.heart === undefined && p.id !== userId);
+
+    const submitHeart = (rid) => {
+      setMyHeart(rid);
+      getSession(latest.id).then(stored => {
+        if (!stored) return;
+        const me = stored.participants?.find(p => p.id === userId);
+        if (me) me.heart = rid;
+        stored.participants.forEach(p => {
+          if (p.isBot && p.heart === undefined) {
+            p.heart = currentPool[Math.floor(Math.random() * currentPool.length)]?.id;
+          }
+        });
+        putSession(stored).then(() => setLatest({ ...stored }));
+      });
+    };
+
+    return (
+      <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:14, paddingBottom:40 }}>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:44 }}>💝</div>
+          <h2 style={{ margin:"8px 0 4px" }}>
+            {heartRound > 1 ? `Still ${currentPool.length} spots — round ${heartRound}!` : `You agreed on ${currentPool.length} spots!`}
+          </h2>
+          <p style={{ color:C.muted, margin:0, fontSize:13 }}>
+            {alreadyHearted
+              ? stillWaiting.length > 0
+                ? `Waiting for ${stillWaiting.map(p => p.name.split(" ")[0]).join(", ")}…`
+                : "Everyone picked — tallying hearts…"
+              : "Heart the one you most want to narrow it down."}
+          </p>
+        </div>
+
+        {currentPool.map(r => {
+          const isHearted = myHeartId === r.id;
+          const heartCount = participants.filter(p => p.heart === r.id).length;
+          return (
+            <div key={r.id} style={{
+              display:"flex", alignItems:"center", gap:12, padding:12, borderRadius:14,
+              background: isHearted ? C.accentSoft : C.card,
+              border: isHearted ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
+              boxShadow: isHearted ? `0 0 16px ${C.accent}33` : "none",
+            }}>
+              <div style={{ width:60, height:60, borderRadius:10, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                {r.photo ? <img src={r.photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:26 }}>🍽️</span>}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:800, fontSize:15, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.name}</div>
+                <div style={{ fontSize:12, color:C.muted }}>⭐ {r.rating} · {r.distanceMi} mi{PRICE_LABEL[r.priceLevel] ? ` · ${PRICE_LABEL[r.priceLevel]}` : ""}</div>
+                {alreadyHearted && heartCount > 0 && (
+                  <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:6 }}>
+                    {participants.filter(p => p.heart === r.id).map(p => (
+                      <span key={p.id} style={{ fontSize:11, borderRadius:6, padding:"2px 8px", fontWeight:600, background:C.accentSoft, color:C.accent, border:`1px solid ${C.accent}44` }}>♥ {p.name.split(" ")[0]}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {!alreadyHearted ? (
+                <button onClick={() => submitHeart(r.id)} style={{ flexShrink:0, padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:700, cursor:"pointer", border:`1.5px solid ${C.accent}`, background:C.accentSoft, color:C.accent }}>♥ Heart</button>
+              ) : isHearted ? (
+                <span style={{ flexShrink:0, fontSize:13, color:C.accent, fontWeight:700 }}>♥ Your pick</span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ── Final picks ──
+  const counts = {};
+  currentPool.forEach(r => { counts[r.id] = participants.filter(p => p.heart === r.id).length; });
+  const maxHearts = Math.max(...currentPool.map(r => counts[r.id] ?? 0), 0);
+  let finalRestaurants = heartRound > 1 || agreed.length > 2
+    ? currentPool.filter(r => (counts[r.id] ?? 0) === maxHearts && maxHearts > 0)
+    : agreed;
+  if (!finalRestaurants.length) finalRestaurants = currentPool.length ? currentPool : agreed;
 
   return (
     <div style={{ paddingTop:16, display:"flex", flexDirection:"column", gap:16, paddingBottom:40 }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:44 }}>🎉</div>
-        <h2 style={{ margin:"6px 0 0" }}>{everyone ? "Unanimous!" : "Tonight's pick"}</h2>
-        <p style={{ color:C.muted, margin:"4px 0 0", fontSize:13 }}>
-          {winner.yes} of {participants.length} {winner.yes === 1 ? "vote" : "votes"}
-        </p>
+        <h2 style={{ margin:"6px 0 0" }}>{finalRestaurants.length === 1 ? "Tonight's pick" : `${finalRestaurants.length} top picks!`}</h2>
+        {heartRound > 1 && <p style={{ color:C.muted, margin:"4px 0 0", fontSize:13 }}>Survived {heartRound} heart round{heartRound > 1 ? "s" : ""}</p>}
       </div>
 
-      <div style={{ border:`2px solid ${C.gold}`, borderRadius:20, boxShadow:`0 0 16px ${C.gold}33` }}>
-        <RestaurantCard r={winner.r} index={0} total={1} />
-      </div>
-
-      {runnersUp.length > 0 && (
-        <div>
-          <div style={{ fontSize:12, color:C.muted, fontWeight:700, letterSpacing:0.5, margin:"4px 0 8px" }}>RUNNERS-UP</div>
-          {runnersUp.map(({ r, yes }) => (
-            <a key={r.id} href={r.mapsUri || "#"} target="_blank" rel="noopener noreferrer"
-              style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8, textDecoration:"none" }}>
-              <div style={{ width:54, height:54, borderRadius:8, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                {r.photo ? <img src={r.photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:24 }}>🍽️</span>}
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{r.name}</div>
-                <div style={{ fontSize:12, color:C.muted }}>⭐ {r.rating} · {r.distanceMi} mi · {yes} {yes === 1 ? "vote" : "votes"}</div>
-              </div>
-            </a>
-          ))}
-        </div>
-      )}
+      {finalRestaurants.map((r, i) => (
+        <RestaurantCard key={r.id} r={r} index={i} total={finalRestaurants.length} hideCount={finalRestaurants.length === 1} />
+      ))}
 
       <div style={{ display:"flex", gap:10 }}>
         <Btn onClick={onRestart} flex>New Round</Btn>
