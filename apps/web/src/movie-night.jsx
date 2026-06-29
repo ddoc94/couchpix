@@ -1039,18 +1039,18 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
       {/* ── Activity tiles: pick what you want to do ── */}
       <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:10 }}>
         <div style={{ textAlign:"center", color:C.muted, fontSize:13, fontWeight:700, letterSpacing:0.5, marginBottom:2 }}>
-          What's the activity?
+          Build your Couch Night
         </div>
         <ActivityTile
           icon="🎬"
           title="NetPix"
-          description="Swipe through movies and pick what to watch together"
+          description="Find the right movie for everyone"
           onClick={onStartMovies}
         />
         <ActivityTile
           icon="🍔"
           title="FoodPix"
-          description="Find a nearby restaurant everyone wants to order from"
+          description="Find the right takeout for everyone"
           onClick={onStartFood}
         />
 
@@ -1060,7 +1060,7 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
         <ActivityTile
           icon="💬"
           title="Unhinged Questions"
-          description="Ask each other things you've never thought about before"
+          description="Get to know each other like never before"
           onClick={onStartQuestions}
         />
       </div>
