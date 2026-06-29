@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useId } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, ACTIVITIES, pickRandomQuestion, drawFromBag } from "./utils.js";
 
@@ -964,67 +964,22 @@ export default function MovieNightApp() {
 }
 
 // ─── Brand Logo ───────────────────────────────────────────────────────────────
-// "Swipe phone" — a smartphone framing a stack of swipe cards: a faded movie
-// card (play) peeking left, the chosen card with a green check in the middle,
-// and a faded food card (fork & knife) peeking right. Implies group decisions
-// on what to watch or where to eat. Uses palette refs so it retints with the
-// theme. The `size` prop sets the rendered HEIGHT; width is derived from the
-// natural 220:300 (portrait) aspect ratio.
+// The CouchPix mark: a phone framing three swipe cards (red play / blue check /
+// green fork & knife). Served as a raster asset from public/logo.png — the
+// natural artwork is 931x1024 (portrait). The `size` prop sets the rendered HEIGHT.
 function Logo({ size = 40 }) {
-  // Unique id per instance so multiple Logos in the DOM don't share a clipPath
-  const uid = useId();
-  const clipId = `logo-screen-${uid.replace(/[:]/g, '')}`;
   return (
-    <svg
-      width={size * (220 / 300)}
+    <img
+      src="/logo.png"
+      alt="CouchPix"
+      width={Math.round(size * (931 / 1024))}
       height={size}
-      viewBox="0 0 220 300"
-      xmlns="http://www.w3.org/2000/svg"
       style={{
         display: "inline-block",
         verticalAlign: "middle",
         filter: `drop-shadow(0 4px 12px ${C.accent}22)`,
       }}
-      aria-label="CouchPix"
-    >
-      <defs>
-        <clipPath id={clipId}>
-          <rect x="55" y="42" width="110" height="216" rx="14"/>
-        </clipPath>
-      </defs>
-      {/* Phone body */}
-      <rect x="44" y="12" width="132" height="276" rx="30" fill={C.card} stroke={C.accent} strokeWidth="10"/>
-      {/* Screen */}
-      <rect x="55" y="42" width="110" height="216" rx="14" fill={C.bg}/>
-      {/* Earpiece + camera */}
-      <rect x="98" y="27" width="24" height="4" rx="2" fill={C.accent} opacity="0.55"/>
-      <circle cx="130" cy="29" r="2.5" fill={C.accent} opacity="0.55"/>
-      {/* Swipe cards (clipped to the screen so they peek behind the bezel) */}
-      <g clipPath={`url(#${clipId})`}>
-        {/* Left peeking card — a movie (play) */}
-        <g transform="translate(40,92) rotate(-7)">
-          <rect width="54" height="150" rx="10" fill={C.card} stroke={C.border} strokeWidth="5"/>
-          <polygon points="19,56 39,70 19,84" fill={C.border}/>
-        </g>
-        {/* Right peeking card — food (fork & knife) */}
-        <g transform="translate(126,92) rotate(7)">
-          <rect width="54" height="150" rx="10" fill={C.card} stroke={C.border} strokeWidth="5"/>
-          <path d="M17,50 v9 M21,50 v9 M25,50 v9" stroke={C.border} strokeWidth="2.4" strokeLinecap="round"/>
-          <path d="M21,57 v29" stroke={C.border} strokeWidth="3.2" strokeLinecap="round"/>
-          <path d="M35,50 c5,3 5,13 0,16 z" fill={C.border}/>
-          <path d="M35,64 v22" stroke={C.border} strokeWidth="3.2" strokeLinecap="round"/>
-        </g>
-        {/* Center card (the pick) — green check */}
-        <g transform="translate(73,80)">
-          <rect width="74" height="158" rx="13" fill={C.card} stroke={C.green} strokeWidth="5"/>
-          <path d="M22,72 l9,11 l21,-27" fill="none" stroke={C.green} strokeWidth="8" strokeLinecap="round" strokeLinejoin="round"/>
-          <rect x="16" y="116" width="42" height="7" rx="3" fill={C.muted} opacity="0.5"/>
-          <rect x="16" y="131" width="28" height="6" rx="3" fill={C.muted} opacity="0.35"/>
-        </g>
-      </g>
-      {/* Home indicator */}
-      <rect x="94" y="270" width="32" height="5" rx="2.5" fill={C.accent} opacity="0.45"/>
-    </svg>
+    />
   );
 }
 
