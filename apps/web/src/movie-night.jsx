@@ -962,19 +962,21 @@ export default function MovieNightApp() {
 }
 
 // ─── Brand Logo ───────────────────────────────────────────────────────────────
-// "Carousel TV" — TV bezel framing a center movie card with two cards peeking
-// from the sides, implying swipe-through-options. Uses palette refs so it
-// retints with the theme. The `size` prop sets the rendered WIDTH; height is
-// derived from the natural 1.42:1 aspect ratio.
+// "Swipe phone" — a smartphone framing a stack of swipe cards: a faded movie
+// card (play) peeking left, the chosen card with a green check in the middle,
+// and a faded food card (fork & knife) peeking right. Implies group decisions
+// on what to watch or where to eat. Uses palette refs so it retints with the
+// theme. The `size` prop sets the rendered HEIGHT; width is derived from the
+// natural 220:300 (portrait) aspect ratio.
 function Logo({ size = 40 }) {
   // Unique id per instance so multiple Logos in the DOM don't share a clipPath
   const uid = useId();
   const clipId = `logo-screen-${uid.replace(/[:]/g, '')}`;
   return (
     <svg
-      width={size}
-      height={size * (580 / 824)}
-      viewBox="100 200 824 580"
+      width={size * (220 / 300)}
+      height={size}
+      viewBox="0 0 220 300"
       xmlns="http://www.w3.org/2000/svg"
       style={{
         display: "inline-block",
@@ -985,39 +987,41 @@ function Logo({ size = 40 }) {
     >
       <defs>
         <clipPath id={clipId}>
-          <rect x="172" y="272" width="680" height="416" rx="14"/>
+          <rect x="55" y="42" width="110" height="216" rx="14"/>
         </clipPath>
       </defs>
-      {/* TV body */}
-      <rect x="120" y="220" width="784" height="520" rx="36" fill={C.card} stroke={C.accent} strokeWidth="28"/>
-      {/* Inner screen recess */}
-      <rect x="172" y="272" width="680" height="416" rx="14" fill={C.bg}/>
-      {/* Cards (clipped to screen so they peek behind the bezel) */}
+      {/* Phone body */}
+      <rect x="44" y="12" width="132" height="276" rx="30" fill={C.card} stroke={C.accent} strokeWidth="10"/>
+      {/* Screen */}
+      <rect x="55" y="42" width="110" height="216" rx="14" fill={C.bg}/>
+      {/* Earpiece + camera */}
+      <rect x="98" y="27" width="24" height="4" rx="2" fill={C.accent} opacity="0.55"/>
+      <circle cx="130" cy="29" r="2.5" fill={C.accent} opacity="0.55"/>
+      {/* Swipe cards (clipped to the screen so they peek behind the bezel) */}
       <g clipPath={`url(#${clipId})`}>
-        {/* Left peeking card */}
-        <g transform="translate(120,326) rotate(-6)">
-          <rect x="0" y="0" width="180" height="296" rx="14" fill={C.card} stroke={C.border} strokeWidth="6"/>
-          <rect x="14" y="14" width="152" height="200" rx="6" fill={C.bg}/>
-          <polygon points="78,98 116,126 78,154" fill={C.border}/>
+        {/* Left peeking card — a movie (play) */}
+        <g transform="translate(40,92) rotate(-7)">
+          <rect width="54" height="150" rx="10" fill={C.card} stroke={C.border} strokeWidth="5"/>
+          <polygon points="19,56 39,70 19,84" fill={C.border}/>
         </g>
-        {/* Right peeking card */}
-        <g transform="translate(724,326) rotate(6)">
-          <rect x="0" y="0" width="180" height="296" rx="14" fill={C.card} stroke={C.border} strokeWidth="6"/>
-          <rect x="14" y="14" width="152" height="200" rx="6" fill={C.bg}/>
-          <polygon points="78,98 116,126 78,154" fill={C.border}/>
+        {/* Right peeking card — food (fork & knife) */}
+        <g transform="translate(126,92) rotate(7)">
+          <rect width="54" height="150" rx="10" fill={C.card} stroke={C.border} strokeWidth="5"/>
+          <path d="M17,50 v9 M21,50 v9 M25,50 v9" stroke={C.border} strokeWidth="2.4" strokeLinecap="round"/>
+          <path d="M21,57 v29" stroke={C.border} strokeWidth="3.2" strokeLinecap="round"/>
+          <path d="M35,50 c5,3 5,13 0,16 z" fill={C.border}/>
+          <path d="M35,64 v22" stroke={C.border} strokeWidth="3.2" strokeLinecap="round"/>
         </g>
-        {/* Center card (front, highlighted) */}
-        <g transform="translate(382,300)">
-          <rect x="0" y="0" width="260" height="360" rx="18" fill={C.card} stroke={C.accent} strokeWidth="8"/>
-          <rect x="18" y="18" width="224" height="240" rx="8" fill={C.bg}/>
-          <polygon points="108,116 168,148 108,180" fill={C.accent}/>
-          <rect x="18" y="280" width="180" height="14" rx="6" fill={C.muted} opacity="0.55"/>
-          <rect x="18" y="304" width="124" height="10" rx="5" fill={C.muted} opacity="0.4"/>
+        {/* Center card (the pick) — green check */}
+        <g transform="translate(73,80)">
+          <rect width="74" height="158" rx="13" fill={C.card} stroke={C.green} strokeWidth="5"/>
+          <path d="M22,72 l9,11 l21,-27" fill="none" stroke={C.green} strokeWidth="8" strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="16" y="116" width="42" height="7" rx="3" fill={C.muted} opacity="0.5"/>
+          <rect x="16" y="131" width="28" height="6" rx="3" fill={C.muted} opacity="0.35"/>
         </g>
       </g>
-      {/* Stand */}
-      <rect x="430" y="740" width="164" height="22" rx="6" fill={C.accent}/>
-      <rect x="380" y="762" width="264" height="20" rx="10" fill={C.accent}/>
+      {/* Home indicator */}
+      <rect x="94" y="270" width="32" height="5" rx="2.5" fill={C.accent} opacity="0.45"/>
     </svg>
   );
 }
