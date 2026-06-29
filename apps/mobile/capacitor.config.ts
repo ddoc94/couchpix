@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.netpix.app',
-  appName: 'NetPix',
+  appName: 'CouchPix',
 
   // webDir is still required by the Capacitor CLI even when we use OTA below.
   // It's used as the *fallback* bundle that ships inside the binary.

@@ -19,7 +19,7 @@ netpix-proxy/
 
 The `webDir: '../netpix-app/dist'` is still required by the Capacitor CLI as a fallback bundle that ships inside the binary (App Store reviewers run it offline). To refresh that fallback before submitting a new build, run `npm run sync`.
 
-**Why OTA here?** NetPix requires internet to function (TMDB, OMDB, Cloudflare Worker for KV sessions). Offline mode wouldn't add value — so we take advantage of the always-online assumption and get instant updates.
+**Why OTA here?** CouchPix requires internet to function (TMDB, OMDB, Cloudflare Worker for KV sessions). Offline mode wouldn't add value — so we take advantage of the always-online assumption and get instant updates.
 
 ## One-time setup
 
@@ -88,7 +88,7 @@ If you ever need to ship an offline-capable build (or pin a specific bundle that
 ## App identity
 
 - **Bundle / app ID:** `com.netpix.app` (edit in `capacitor.config.ts` if you have a conflict)
-- **App name:** `NetPix`
+- **App name:** `CouchPix`
 - **Display icon + splash:** placeholders for now. To customize, drop a 1024×1024 PNG at `resources/icon.png` and a 2732×2732 splash at `resources/splash.png`, then install `@capacitor/assets` and run `npx capacitor-assets generate` (one-off command, regenerates all sizes for iOS + Android).
 
 ## Don't add Capacitor-specific plugins (yet)

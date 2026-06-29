@@ -77,7 +77,7 @@ async function gotoMovieNight(page) {
 
 test('home screen renders activity tiles', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'NetPix' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'CouchPix' })).toBeVisible();
   await expect(page.getByRole('button', { name: /movie night/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /food night/i })).toBeVisible();
   // Demo mode button should be gone
@@ -335,7 +335,7 @@ test('reset button returns to home', async ({ page }) => {
   await expect(page.getByText(/session code/i)).toBeVisible();
   await page.getByRole('button', { name: /reset/i }).click();
 
-  await expect(page.getByRole('heading', { name: 'NetPix' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'CouchPix' })).toBeVisible();
 });
 
 // ─── Mobile viewport smoke test ──────────────────────────────────────────────

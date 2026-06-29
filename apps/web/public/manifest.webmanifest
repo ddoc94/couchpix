@@ -1,6 +1,6 @@
 {
-  "name": "NetPix",
-  "short_name": "NetPix",
+  "name": "CouchPix",
+  "short_name": "CouchPix",
   "description": "Swipe right on movies everyone wants to watch.",
   "id": "/",
   "start_url": "/",
