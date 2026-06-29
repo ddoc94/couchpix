@@ -1035,7 +1035,7 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
       <div style={{ textAlign:"center" }}>
         <div style={{ marginBottom:12, display:"flex", justifyContent:"center" }}><Logo size={140} /></div>
         <h1 style={{ margin:0, fontSize:32, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-1 }}>CouchPix</h1>
-        <p style={{ color:C.muted, fontSize:15, marginTop:6 }}>Swipe right on movies everyone wants to watch</p>
+        <p style={{ color:C.muted, fontSize:15, marginTop:6 }}>Swipe with friends to pick what to watch or where to eat</p>
       </div>
 
       {/* ── Account: either the logged-in chip OR a prominent login card ── */}
