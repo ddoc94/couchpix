@@ -338,6 +338,7 @@ export default {
         "places.editorialSummary", "places.takeout", "places.delivery",
       ].join(",");
       const byId = new Map();
+      const matchedBy = new Map(); // place id -> Set of picked cuisines that surfaced it
       for (const cuisine of cuisineList) {
         const cacheKey = `food:${zip}:${cuisine.toLowerCase()}:${radius}`;
         let pl = await env.SESSIONS.get(cacheKey, "json");
@@ -357,7 +358,14 @@ export default {
           pl = pb.places || [];
           await env.SESSIONS.put(cacheKey, JSON.stringify(pl), { expirationTtl: 60 * 60 * 6 });
         }
-        for (const p of pl) if (p.id && !byId.has(p.id)) byId.set(p.id, p);
+        // Tag each place with the cuisine(s) whose search returned it, so the app
+        // can rank by how many of a group's picked cuisines a spot matches.
+        for (const p of pl) {
+          if (!p.id) continue;
+          if (!byId.has(p.id)) byId.set(p.id, p);
+          if (!matchedBy.has(p.id)) matchedBy.set(p.id, new Set());
+          matchedBy.get(p.id).add(cuisine);
+        }
       }
       const places = [...byId.values()];
 
@@ -428,7 +436,8 @@ export default {
         name: p.displayName?.text || "Unknown",
         address: p.formattedAddress || "",
         distanceMi: Math.round(distMi(center, { lat: p.location.latitude, lng: p.location.longitude }) * 10) / 10,
-        cuisine: p.primaryTypeDisplayName?.text || cuisine,
+        cuisine: p.primaryTypeDisplayName?.text || null,
+        matchedCuisines: [...(matchedBy.get(p.id) || [])],
         rating: p.rating ?? null,
         reviews: p.userRatingCount ?? 0,
         priceLevel: p.priceLevel ?? null,
