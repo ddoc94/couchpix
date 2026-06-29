@@ -1633,11 +1633,10 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
   // any installed app. Falls back to copy if the browser doesn't support it.
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
   const shareUrl = async () => {
-    // Name the activity so the invite reads right whichever flow this is.
-    const activityLabel =
-      session?.activity === ACTIVITIES.FOOD ? "FoodPix"
-      : session?.activity === ACTIVITIES.QUESTIONS ? "Unhinged Questions"
-      : "NetPix";
+    // Name the activity so the invite reads right. Only movie (NetPix) and food
+    // (FoodPix) sessions ever reach the lobby — Unhinged Questions runs locally
+    // on the admin's device and never creates a shared session.
+    const activityLabel = session?.activity === ACTIVITIES.FOOD ? "FoodPix" : "NetPix";
     const text = `Join my CouchPix ${activityLabel} session`;
     try {
       if (canShare) {
