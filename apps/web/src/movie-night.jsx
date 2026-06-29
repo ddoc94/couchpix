@@ -1633,7 +1633,12 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
   // any installed app. Falls back to copy if the browser doesn't support it.
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
   const shareUrl = async () => {
-    const text = "Join my CouchPix movie night";
+    // Name the activity so the invite reads right whichever flow this is.
+    const activityLabel =
+      session?.activity === ACTIVITIES.FOOD ? "FoodPix"
+      : session?.activity === ACTIVITIES.QUESTIONS ? "Unhinged Questions"
+      : "NetPix";
+    const text = `Join my CouchPix ${activityLabel} session`;
     try {
       if (canShare) {
         await navigator.share({ title: "CouchPix", text, url: sessionUrl });
