@@ -1,6 +1,6 @@
 # netpix-proxy
 
-Cloudflare Worker backend for NetPix / CouchPix. Despite the "proxy" name, this is
+Cloudflare Worker backend for CouchPix. Despite the "proxy" name, this is
 the full backend — it hides API keys, stores session & profile state in KV, and
 powers movie + restaurant discovery with caching.
 

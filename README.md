@@ -1,8 +1,8 @@
-# NetPix / CouchPix — monorepo
+# CouchPix — monorepo
 
 Group decision-making app: swipe with friends to pick a **movie** to watch or a
-**restaurant** to order from. Product name is **CouchPix** (App Store); internal
-infra still uses the `netpix` name (Vercel project, Worker, URLs).
+**restaurant** to order from. The product is **CouchPix**; internal infra still
+uses the legacy `netpix` name (Vercel project, Worker, URLs, iOS bundle id).
 
 ## Layout
 

@@ -981,7 +981,7 @@ function Logo({ size = 40 }) {
         verticalAlign: "middle",
         filter: `drop-shadow(0 4px 12px ${C.accent}22)`,
       }}
-      aria-label="NetPix"
+      aria-label="CouchPix"
     >
       <defs>
         <clipPath id={clipId}>
@@ -1030,7 +1030,7 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
     <div style={{ paddingTop:32, display:"flex", flexDirection:"column", alignItems:"center", gap:18 }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ marginBottom:12, display:"flex", justifyContent:"center" }}><Logo size={140} /></div>
-        <h1 style={{ margin:0, fontSize:32, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-1 }}>NetPix</h1>
+        <h1 style={{ margin:0, fontSize:32, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-1 }}>CouchPix</h1>
         <p style={{ color:C.muted, fontSize:15, marginTop:6 }}>Swipe right on movies everyone wants to watch</p>
       </div>
 
@@ -1320,7 +1320,7 @@ function QRScanScreen({ onDetected, onCancel }) {
               onDetected(match[1].toUpperCase());
               return;
             } else {
-              setStatus("That's a QR code but not a NetPix one — try again");
+              setStatus("That's a QR code but not a CouchPix one — try again");
             }
           }
           rafRef.current = requestAnimationFrame(tick);
@@ -1633,10 +1633,10 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
   // any installed app. Falls back to copy if the browser doesn't support it.
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
   const shareUrl = async () => {
-    const text = "Join my NetPix movie night";
+    const text = "Join my CouchPix movie night";
     try {
       if (canShare) {
-        await navigator.share({ title: "NetPix", text, url: sessionUrl });
+        await navigator.share({ title: "CouchPix", text, url: sessionUrl });
       } else {
         copyUrl();
       }
