@@ -306,7 +306,7 @@ test('results screen shows matched movies', async ({ page, request }) => {
   await page.reload();
 
   // Should skip waiting phase (all done) and show results
-  await expect(page.getByText(/tonight you're watching|top picks/i)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/tonight's pick/i)).toBeVisible({ timeout: 10_000 });
 });
 
 test('results screen has new round and new session buttons', async ({ page, request }) => {
