@@ -267,7 +267,7 @@ function useTMDBMovieData(movies) {
     // Hard 10s timeout — if fetches hang, unblock with whatever we have
     const timer = setTimeout(() => {
       if (!cancelled) {
-        console.warn("[NetPix] Timeout hit — unblocking with partial data");
+        console.warn("[CouchPix] Timeout hit — unblocking with partial data");
         setData(prev => {
           const filled = { ...prev };
           movies.forEach(m => { if (filled[m.id] === undefined) filled[m.id] = null; });
@@ -1255,7 +1255,7 @@ function SignInScreen({ onSignedIn, onCancel }) {
 }
 
 // ─── QR Scan Screen ───────────────────────────────────────────────────────────
-// Opens the device camera and scans for a NetPix session QR code. When detected
+// Opens the device camera and scans for a CouchPix session QR code. When detected
 // we extract the session ID from the URL (?session=XXXXXX) and route to the
 // join flow with the code pre-filled.
 function QRScanScreen({ onDetected, onCancel }) {
@@ -1312,7 +1312,7 @@ function QRScanScreen({ onDetected, onCancel }) {
           const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const code = jsQRMod(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
           if (code?.data) {
-            // Parse the QR — accept either a full netpix URL or a bare session code
+            // Parse the QR — accept either a full CouchPix URL or a bare session code
             const match = code.data.match(/[?&]session=([A-Z0-9]{4,10})/i) || code.data.match(/^([A-Z0-9]{4,10})$/i);
             if (match) {
               setStatus("Code found — joining…");

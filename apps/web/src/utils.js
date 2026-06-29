@@ -1,5 +1,5 @@
 // ─── Activities ────────────────────────────────────────────────────────────────
-// NetPix evolves beyond movie picking. Sessions carry an `activity` field that
+// CouchPix evolves beyond movie picking. Sessions carry an `activity` field that
 // determines what flow runs after the lobby.
 export const ACTIVITIES = {
   MOVIES: "movies",
