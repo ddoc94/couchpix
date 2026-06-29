@@ -1082,13 +1082,13 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
         </div>
         <ActivityTile
           icon="🎬"
-          title="Movie Night"
+          title="NetPix"
           description="Swipe through movies and pick what to watch together"
           onClick={onStartMovies}
         />
         <ActivityTile
           icon="🍔"
-          title="Food Night"
+          title="FoodPix"
           description="Find a nearby restaurant everyone wants to order from"
           onClick={onStartFood}
         />
@@ -1134,7 +1134,7 @@ function MovieNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:24, alignItems:"center" }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:56, marginBottom:8, lineHeight:1 }}>🎬</div>
-        <h2 style={{ margin:0, fontSize:24, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-0.5 }}>Movie Night</h2>
+        <h2 style={{ margin:0, fontSize:24, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-0.5 }}>NetPix</h2>
         <p style={{ color:C.muted, fontSize:13, margin:"6px 0 0", maxWidth:280, lineHeight:1.5 }}>
           Swipe through movies with friends and pick what to watch together.
         </p>
@@ -3398,7 +3398,7 @@ function FoodNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:24, alignItems:"center" }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:56, marginBottom:8, lineHeight:1 }}>🍔</div>
-        <h2 style={{ margin:0, fontSize:24, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-0.5 }}>Food Night</h2>
+        <h2 style={{ margin:0, fontSize:24, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-0.5 }}>FoodPix</h2>
         <p style={{ color:C.muted, fontSize:13, margin:"6px 0 0", maxWidth:280, lineHeight:1.5 }}>
           Swipe nearby restaurants with friends and pick where to order from together.
         </p>
