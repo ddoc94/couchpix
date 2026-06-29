@@ -23,7 +23,7 @@ const config: CapacitorConfig = {
     //  bundled `webDir` content is ignored (kept only as a marketing-required
     //  fallback that App Store reviewers see).
     //
-    //  Tradeoff: the app requires internet to launch. That's fine for NetPix
+    //  Tradeoff: the app requires internet to launch. That's fine for CouchPix
     //  since the worker, TMDB, and KV sessions are all online-only anyway.
     //  If you ever ship offline-capable features, switch to a real bundled
     //  build by commenting out the `url` line below.
