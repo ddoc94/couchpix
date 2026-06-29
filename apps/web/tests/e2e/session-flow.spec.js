@@ -64,13 +64,13 @@ async function seedCompletedSession(request, movieCount = 4) {
   });
 }
 
-/** Open the app and tap the Movie Night activity tile to reach its sub-home
- *  (where Create a Session / Enter Code live). The home screen now leads with
- *  activity tiles — Movie Night, Food Night, Unhinged Questions — so the
- *  movie-night flow starts one tap deeper than it used to. */
+/** Open the app and tap the NetPix (movie) activity tile to reach its sub-home
+ *  (where Create a Session / Enter Code live). The home screen leads with
+ *  activity tiles — NetPix, FoodPix, Unhinged Questions — so the movie flow
+ *  starts one tap deeper than it used to. */
 async function gotoMovieNight(page) {
   await page.goto('/');
-  await page.getByRole('button', { name: /movie night/i }).click();
+  await page.getByRole('button', { name: /netpix/i }).click();
 }
 
 // ─── Home screen ─────────────────────────────────────────────────────────────
@@ -78,15 +78,15 @@ async function gotoMovieNight(page) {
 test('home screen renders activity tiles', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'CouchPix' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /movie night/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /food night/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /netpix/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /foodpix/i })).toBeVisible();
   // Demo mode button should be gone
   await expect(page.getByText(/demo mode/i)).not.toBeVisible();
 });
 
-test('movie night screen renders create and join options', async ({ page }) => {
+test('NetPix screen renders create and join options', async ({ page }) => {
   await gotoMovieNight(page);
-  await expect(page.getByRole('heading', { name: 'Movie Night' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'NetPix' })).toBeVisible();
   await expect(page.getByRole('button', { name: /create a session/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /enter code/i })).toBeVisible();
 });
