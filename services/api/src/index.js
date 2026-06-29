@@ -401,7 +401,7 @@ export default {
       })
         // Union spans multiple cuisines — rank best-rated first, then cap the deck.
         .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-        .slice(0, 15);
+        .slice(0, 10);
 
       // 4) Resolve one photo each to a key-less URL + shape to card fields.
       const toRad = d => d * Math.PI / 180;
