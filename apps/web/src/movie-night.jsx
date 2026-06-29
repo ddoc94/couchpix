@@ -2922,17 +2922,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     else if (passionMovies.length > 0) yesMovies = passionMovies;
     else yesMovies = [];
 
-    const pool = (Array.isArray(latestSession.heartPool) ? latestSession.heartPool : yesMovies.map(m => m.id))
-      .map(id => movies.find(m => m.id === id))
-      .filter(Boolean);
-    const heartCounts = {};
-    pool.forEach(m => { heartCounts[m.id] = participants.filter(p => p.heart === m.id).length; });
-    const maxHearts = Math.max(...pool.map(m => heartCounts[m.id] ?? 0), 0);
-    const round = latestSession.heartRound || 1;
-    let finalMovies = round > 1 || yesMovies.length > 2
-      ? pool.filter(m => (heartCounts[m.id] ?? 0) === maxHearts && maxHearts > 0)
-      : yesMovies;
-    if (finalMovies.length === 0) finalMovies = pool.length ? pool : yesMovies;
+    const finalMovies = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres });
     if (!finalMovies.length) return;
 
     savedRef.current = true;
@@ -3157,20 +3147,15 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     );
   }
 
-  // ── Final results ──
-  // Recompute survivors from the last heart round
+  // ── Final results: one winner + runners-up ──
+  // Rank the agreed movies — most hearts, then higher rating, then most matched
+  // genres — and crown the top one, listing the rest below as runners-up.
   const heartCounts = {};
-  currentPool.forEach(m => { heartCounts[m.id] = participants.filter(p => p.heart === m.id).length; });
-  const maxHearts = Math.max(...currentPool.map(m => heartCounts[m.id] ?? 0), 0);
-  let finalMovies = heartRound > 1 || yesMovies.length > 2
-    ? currentPool.filter(m => (heartCounts[m.id] ?? 0) === maxHearts && maxHearts > 0)
-    : yesMovies;
-  // Fallback: if hearts somehow produced no winners (cross-device race during a
-  // round transition, or all hearts landed outside currentPool), surface the
-  // unanimous yes pool so the user always sees something instead of an empty screen.
-  if (finalMovies.length === 0) {
-    finalMovies = currentPool.length ? currentPool : yesMovies;
-  }
+  yesMovies.forEach(m => { heartCounts[m.id] = participants.filter(p => p.heart === m.id).length; });
+  const ranked = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres });
+  const winner = ranked[0];
+  const runnersUp = ranked.slice(1, 4);
+  const finalMovies = ranked; // saveForLater() looks movies up here
 
   // (auto-save effect lives near the top of the component, before conditional returns,
   // so React's hook-order invariant isn't violated)
@@ -3230,13 +3215,11 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:16 }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:50 }}>🎉</div>
-        <h2 style={{ margin:"8px 0 4px" }}>
-          {finalMovies.length === 1 ? "Tonight you're watching…" : `${finalMovies.length} top picks!`}
-        </h2>
+        <h2 style={{ margin:"8px 0 4px" }}>Tonight's pick</h2>
         {heartRound > 1 && <p style={{ color:C.muted, margin:0, fontSize:13 }}>Survived {heartRound} heart round{heartRound > 1 ? "s" : ""}</p>}
       </div>
 
-      {finalMovies.map(movie => (
+      {[winner].map(movie => (
         <div key={movie.id} style={{ background: C.card, borderRadius:16, overflow:"hidden", border:`2px solid ${C.accent}55`, display:"flex", boxShadow:`0 0 30px ${C.accent}22` }}>
           <PosterThumb poster={movie.poster} title={movie.title} />
           <div style={{ flex:1, padding:"12px 14px" }}>
@@ -3330,6 +3313,27 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
           </div>
         </div>
       ))}
+
+      {runnersUp.length > 0 && (
+        <div>
+          <div style={{ fontSize:12, color:C.muted, fontWeight:700, letterSpacing:0.5, margin:"4px 0 8px" }}>RUNNERS-UP</div>
+          {runnersUp.map(movie => (
+            <div key={movie.id} style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8 }}>
+              <div style={{ width:46, height:64, borderRadius:6, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                {movie.poster ? <img src={movie.poster} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:22 }}>🎬</span>}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{movie.title} <span style={{ color:C.muted, fontWeight:400, fontSize:12 }}>{movie.year}</span></div>
+                <div style={{ fontSize:12, color:C.muted, display:"flex", gap:8, marginTop:2 }}>
+                  <span style={{ color:C.gold }}>⭐ {movie.imdb}</span>
+                  <span style={{ color:"#fa4b3a" }}>🍅 {movie.rt}%</span>
+                  {(heartCounts[movie.id] ?? 0) > 0 && <span style={{ color:C.accent, fontWeight:700 }}>♥ {heartCounts[movie.id]}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ display:"flex", gap:12, marginTop:8 }}>
         <Btn onClick={doNewRound} outline>New Round</Btn>
@@ -3809,6 +3813,25 @@ function FoodSwipingScreen({ session, userId, onDone }) {
   );
 }
 
+// Order the agreed finalists for the results screen, picking a single winner.
+// Most hearts wins first (hearts are the primary narrowing signal); ties break
+// by higher rating, then by how many user-picked criteria the item matches
+// (genres for movies, cuisines for restaurants — summed across all participants).
+function rankFinalists(items, participants, { ratingOf, tagsOf, pickedOf }) {
+  const heartOf = it => participants.filter(p => p.heart === it.id).length;
+  const matchOf = (it) => {
+    const tags = (tagsOf(it) || []).map(t => String(t).toLowerCase());
+    if (!tags.length) return 0;
+    return participants.reduce((sum, p) =>
+      sum + (pickedOf(p) || []).filter(t => tags.includes(String(t).toLowerCase())).length, 0);
+  };
+  return [...items].sort((a, b) =>
+    heartOf(b) - heartOf(a) ||
+    (ratingOf(b) || 0) - (ratingOf(a) || 0) ||
+    matchOf(b) - matchOf(a)
+  );
+}
+
 // Compute the pool of restaurants the group "agreed" on, mirroring the movie
 // yes-pool logic: prefer unanimous yes, else a real majority, else any spot that
 // got at least one yes. Returned restaurants are ranked yeses-then-rating.
@@ -3994,26 +4017,43 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     );
   }
 
-  // ── Final picks ──
-  const counts = {};
-  currentPool.forEach(r => { counts[r.id] = participants.filter(p => p.heart === r.id).length; });
-  const maxHearts = Math.max(...currentPool.map(r => counts[r.id] ?? 0), 0);
-  let finalRestaurants = heartRound > 1 || agreed.length > 2
-    ? currentPool.filter(r => (counts[r.id] ?? 0) === maxHearts && maxHearts > 0)
-    : agreed;
-  if (!finalRestaurants.length) finalRestaurants = currentPool.length ? currentPool : agreed;
+  // ── Final pick + runners-up ──
+  // Rank the agreed spots — most hearts, then higher rating, then most matched
+  // cuisines — and crown the top one, listing the rest below as runners-up.
+  const ranked = rankFinalists(agreed, participants, { ratingOf: r => r.rating, tagsOf: r => r.matchedCuisines, pickedOf: p => p.cuisines });
+  const winner = ranked[0];
+  const runnersUp = ranked.slice(1, 4);
 
   return (
     <div style={{ paddingTop:16, display:"flex", flexDirection:"column", gap:16, paddingBottom:40 }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:44 }}>🎉</div>
-        <h2 style={{ margin:"6px 0 0" }}>{finalRestaurants.length === 1 ? "Tonight's pick" : `${finalRestaurants.length} top picks!`}</h2>
+        <h2 style={{ margin:"6px 0 0" }}>Tonight's pick</h2>
         {heartRound > 1 && <p style={{ color:C.muted, margin:"4px 0 0", fontSize:13 }}>Survived {heartRound} heart round{heartRound > 1 ? "s" : ""}</p>}
       </div>
 
-      {finalRestaurants.map((r, i) => (
-        <RestaurantCard key={r.id} r={r} index={i} total={finalRestaurants.length} hideCount={finalRestaurants.length === 1} />
-      ))}
+      <RestaurantCard r={winner} index={0} total={1} hideCount />
+
+      {runnersUp.length > 0 && (
+        <div>
+          <div style={{ fontSize:12, color:C.muted, fontWeight:700, letterSpacing:0.5, margin:"4px 0 8px" }}>RUNNERS-UP</div>
+          {runnersUp.map(r => {
+            const hearts = participants.filter(p => p.heart === r.id).length;
+            return (
+              <a key={r.id} href={r.mapsUri || "#"} target="_blank" rel="noopener noreferrer"
+                style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8, textDecoration:"none" }}>
+                <div style={{ width:54, height:54, borderRadius:8, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  {r.photo ? <img src={r.photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:24 }}>🍽️</span>}
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{r.name}</div>
+                  <div style={{ fontSize:12, color:C.muted }}>⭐ {r.rating} · {r.distanceMi} mi{hearts ? ` · ♥ ${hearts}` : ""}</div>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
 
       <div style={{ display:"flex", gap:10 }}>
         <Btn onClick={onRestart} flex>New Round</Btn>
