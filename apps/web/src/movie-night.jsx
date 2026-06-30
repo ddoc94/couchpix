@@ -4058,8 +4058,8 @@ function ActivityTile({ icon, title, description, onClick }) {
       onClick={onClick}
       style={{
         width: "100%",
-        background: C.card,
-        border: `1.5px solid ${C.accent}`,
+        background: C.accent,
+        border: "none",
         borderRadius: 14,
         padding: "14px 16px",
         display: "flex",
@@ -4067,7 +4067,7 @@ function ActivityTile({ icon, title, description, onClick }) {
         gap: 14,
         cursor: "pointer",
         textAlign: "left",
-        boxShadow: `0 2px 10px ${C.accent}22`,
+        boxShadow: `0 3px 12px ${C.accent}4d`,
         transition: "all 0.15s",
       }}
     >
@@ -4075,16 +4075,16 @@ function ActivityTile({ icon, title, description, onClick }) {
         width: 48,
         height: 48,
         borderRadius: 12,
-        background: C.accentSoft,
+        background: "rgba(255,255,255,0.22)",
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 26,
         flexShrink: 0,
       }}>{icon}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{title}</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 1.4 }}>{description}</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>{title}</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.88)", marginTop: 2, lineHeight: 1.4 }}>{description}</div>
       </div>
-      <span style={{ color: C.accent, fontSize: 20, fontWeight: 800, flexShrink: 0 }}>→</span>
+      <span style={{ color: "#fff", fontSize: 20, fontWeight: 800, flexShrink: 0 }}>→</span>
     </button>
   );
 }
