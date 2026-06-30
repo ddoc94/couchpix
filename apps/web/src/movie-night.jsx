@@ -1068,7 +1068,7 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
       <div style={{ marginTop:"auto", paddingTop:32, paddingBottom:16, textAlign:"center", display:"flex", flexDirection:"column", gap:8 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
           <img
-            src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb20f582e4c76e05c5a0d4c78c48f9a8b.svg"
+            src="/tmdb.svg"
             alt="TMDB"
             style={{ height:12, opacity:0.5 }}
           />
