@@ -1045,12 +1045,14 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
           icon="🎬"
           title="NetPix"
           description="Pick the right movie for everyone"
+          color={C.red}
           onClick={onStartMovies}
         />
         <ActivityTile
           icon="🍔"
           title="FoodPix"
           description="Pick the right takeout for everyone"
+          color={C.green}
           onClick={onStartFood}
         />
 
@@ -1061,6 +1063,7 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
           icon="💬"
           title="Unhinged Questions"
           description="Get to know each other like never before"
+          color={C.accent}
           onClick={onStartQuestions}
         />
       </div>
@@ -4052,13 +4055,13 @@ function Chip({ children, active, onClick, disabled, accentColor }) {
 // Big-icon tile used on the home screen to launch an activity (Movie Night,
 // Fun Questions, etc.). One full-width row with icon left, title + description
 // right, and an arrow on the far right.
-function ActivityTile({ icon, title, description, onClick }) {
+function ActivityTile({ icon, title, description, onClick, color = C.accent }) {
   return (
     <button
       onClick={onClick}
       style={{
         width: "100%",
-        background: C.accent,
+        background: color,
         border: "none",
         borderRadius: 14,
         padding: "14px 16px",
@@ -4067,7 +4070,7 @@ function ActivityTile({ icon, title, description, onClick }) {
         gap: 14,
         cursor: "pointer",
         textAlign: "left",
-        boxShadow: `0 3px 12px ${C.accent}4d`,
+        boxShadow: `0 3px 12px ${color}4d`,
         transition: "all 0.15s",
       }}
     >
