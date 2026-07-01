@@ -66,7 +66,7 @@ async function seedCompletedSession(request, movieCount = 4) {
 
 /** Open the app and tap the NetPix (movie) activity tile to reach its sub-home
  *  (where Create a Session / Enter Code live). The home screen leads with
- *  activity tiles — NetPix, FoodPix, Unhinged Questions — so the movie flow
+ *  activity tiles — NetPix, FoodPix, Bonding Questions — so the movie flow
  *  starts one tap deeper than it used to. */
 async function gotoMovieNight(page) {
   await page.goto('/');

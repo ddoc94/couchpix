@@ -1061,7 +1061,7 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
         </div>
         <ActivityTile
           icon="💬"
-          title="Unhinged Questions"
+          title="Bonding Questions"
           description="Get to know each other like never before"
           color={C.accent}
           onClick={onStartQuestions}
@@ -1598,7 +1598,7 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
   const shareUrl = async () => {
     // Name the activity so the invite reads right. Only movie (NetPix) and food
-    // (FoodPix) sessions ever reach the lobby — Unhinged Questions runs locally
+    // (FoodPix) sessions ever reach the lobby — Bonding Questions runs locally
     // on the admin's device and never creates a shared session.
     const activityLabel = session?.activity === ACTIVITIES.FOOD ? "FoodPix" : "NetPix";
     const text = `Join my CouchPix ${activityLabel} session`;
@@ -2523,7 +2523,7 @@ function PosterThumb({ poster, title }) {
 }
 
 // ─── Results Screen ───────────────────────────────────────────────────────────
-// ─── Unhinged Questions Screen ───────────────────────────────────────────────
+// ─── Bonding Questions Screen ───────────────────────────────────────────────
 // Lightweight standalone activity — single-device, no session. One person opens
 // it, sees a question, the group talks about it, then taps Next (or swipes) for
 // another. Uses a SHUFFLE BAG (random without replacement) so you never see a
