@@ -92,20 +92,19 @@ export default {
     }
 
     // ── Session API ──
+    // Sessions live in a Durable Object (one instance per session id) instead of
+    // KV. KV is eventually consistent — reads are cached per-edge for up to ~60s,
+    // so a participant joining from a different POP wouldn't show up on the admin's
+    // device for tens of seconds. A DO is strongly consistent and single-instance,
+    // so every device sees writes immediately.
     const sessionMatch = url.pathname.match(/^\/session\/([A-Z0-9]{4,10})$/i);
     if (sessionMatch) {
       const id = sessionMatch[1].toUpperCase();
-      if (request.method === "GET") {
-        const val = await env.SESSIONS.get(id);
-        if (!val) return json({ error: "not found" }, 404);
-        return new Response(val, { headers: { "Content-Type": "application/json", ...CORS } });
+      if (request.method !== "GET" && request.method !== "PUT") {
+        return json({ error: "method not allowed" }, 405);
       }
-      if (request.method === "PUT") {
-        const body = await request.text();
-        await env.SESSIONS.put(id, body, { expirationTtl: SESSION_TTL });
-        return json({ ok: true });
-      }
-      return json({ error: "method not allowed" }, 405);
+      const stub = env.SESSION_ROOM.get(env.SESSION_ROOM.idFromName(id));
+      return stub.fetch(request);
     }
 
     // ── Movie Discovery ──
@@ -464,3 +463,35 @@ export default {
     }
   },
 };
+
+// ── Session Durable Object ──
+// One instance per session id (SESSION_ROOM.idFromName(id)). Stores the session
+// JSON blob under a single "data" key. Strongly consistent, so joins/votes show
+// up on every device on the next poll instead of waiting out KV's edge cache.
+// An alarm deletes the data ~24h after the last write to mirror the old TTL.
+export class SessionRoom {
+  constructor(state) {
+    this.state = state;
+  }
+
+  async fetch(request) {
+    if (request.method === "GET") {
+      const val = await this.state.storage.get("data");
+      if (!val) return json({ error: "not found" }, 404);
+      return new Response(val, { headers: { "Content-Type": "application/json", ...CORS } });
+    }
+    if (request.method === "PUT") {
+      const body = await request.text();
+      await this.state.storage.put("data", body);
+      await this.state.storage.setAlarm(Date.now() + SESSION_TTL * 1000);
+      return json({ ok: true });
+    }
+    return json({ error: "method not allowed" }, 405);
+  }
+
+  // Fired ~24h after the last write; clears the session so DO storage doesn't grow
+  // unbounded (mirrors the KV expirationTtl the sessions used to have).
+  async alarm() {
+    await this.state.storage.deleteAll();
+  }
+}
