@@ -1581,13 +1581,14 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
   const [copied, setCopied] = useState(false);
   const sessionUrl = `${window.location.origin}${window.location.pathname}?session=${session?.id}`;
 
+  // Cap the backoff at 3s in the lobby so newly-joined participants show up fast.
   useAdaptivePoll(session?.id, (s) => {
     if (s.started === true && session.started !== true) {
       onStarted(s);
     } else {
       onSync(s);
     }
-  });
+  }, { max: 3000 });
 
   const copyUrl = () => {
     navigator.clipboard.writeText(sessionUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
