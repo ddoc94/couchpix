@@ -1,7 +1,7 @@
-const TMDB_KEY = "8265bd1679663a7ea12ac168da84d2e8";
+// TMDB_KEY and OMDB_KEY are Worker secrets (set via `wrangler secret put`),
+// read from `env` inside fetch() — never hardcode API keys in source.
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
-const OMDB_KEY = "dd7efe1f";
 const SESSION_TTL = 60 * 60 * 24;          // 24 hours
 const PROFILE_TTL = 60 * 60 * 24 * 90;     // 90 days — sliding window, refreshed on each write
 
@@ -64,6 +64,10 @@ const GENRE_MAP = {
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
+
+    // API keys come from Worker secrets, not source.
+    const TMDB_KEY = env.TMDB_KEY;
+    const OMDB_KEY = env.OMDB_KEY;
 
     const url = new URL(request.url);
 
