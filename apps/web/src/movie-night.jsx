@@ -2780,7 +2780,14 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
         setLatestSession(s);
         // Mirror server-side heart state into local React state
         if (Array.isArray(s.heartPool)) setHeartPool(s.heartPool);
-        if (typeof s.heartRound === "number") setHeartRound(s.heartRound);
+        // When a new heart round starts (often written by ANOTHER device), clear
+        // this device's local `myHeart` too — otherwise `alreadyHearted` stays
+        // true here, this device can never cast a round-N heart, and the whole
+        // group deadlocks waiting for a vote it can't give.
+        if (typeof s.heartRound === "number" && s.heartRound !== heartRound) {
+          setHeartRound(s.heartRound);
+          setMyHeart(null);
+        }
 
       const allSwipeDone = s.participants.every(p => p.done);
       if (!allSwipeDone) { setPhase("waiting"); return; }
@@ -3824,7 +3831,13 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   useAdaptivePoll(session.id, (s) => {
     setLatest(s);
     if (Array.isArray(s.heartPool)) setHeartPool(s.heartPool);
-    if (typeof s.heartRound === "number") setHeartRound(s.heartRound);
+    // A new heart round (often written by another device) must also clear this
+    // device's local `myHeart`, or it stays stuck on "already hearted" and the
+    // group deadlocks. See the movie ResultsScreen for the full explanation.
+    if (typeof s.heartRound === "number" && s.heartRound !== heartRound) {
+      setHeartRound(s.heartRound);
+      setMyHeart(null);
+    }
 
     // Host started a new round (foodReady reset) → pull everyone back to prefs.
     if (s.foodReady === false && !navedRef.current) {
