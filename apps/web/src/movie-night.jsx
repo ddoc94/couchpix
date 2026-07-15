@@ -2119,10 +2119,8 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
   const [submitting, setSubmitting] = useState(false);
   const lockedMovies = useRef(null); // frozen once swiping starts to prevent mid-swipe list changes
 
-  if (!session || !session.movies?.length) return <div style={{ padding:40, textAlign:"center", color:C.muted }}>No movies found. Try adjusting your criteria.</div>;
-
-  const criteria = session.criteria || {};
-  const candidatePool = session.movies;
+  const criteria = session?.criteria || {};
+  const candidatePool = session?.movies || [];
   const tmdbData = useTMDBMovieData(candidatePool);
 
   // tmdbData[id] === undefined → not yet fetched; null → fetched but failed; object → success
@@ -2148,6 +2146,9 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
       if (movies[i]?.id != null) prefetchTrailer(movies[i].id);
     }
   }, [idx, movies]);
+
+  // Guard AFTER all hook calls so hook order stays stable across renders (rules-of-hooks).
+  if (!session || !session.movies?.length) return <div style={{ padding:40, textAlign:"center", color:C.muted }}>No movies found. Try adjusting your criteria.</div>;
 
   // Show loading state while waiting for TMDB data if services are selected
   if (needsStreamingFilter && !tmdbLoaded) {
@@ -2888,7 +2889,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     const scoreOf = id => (voteCounts[id] || 0) + 2 * (passionCounts[id] || 0);
     const unanimousYes = movies.filter(m => voteCounts[m.id] === totalP);
     const majorityYes = movies
-      .filter(m => voteCounts[m.id] > 1 && voteCounts[m.id] < totalP)
+      .filter(m => voteCounts[m.id] > totalP / 2 && voteCounts[m.id] < totalP)
       .sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
     const isTwo = totalP <= 2;
     const passionMovies = movies.filter(m => passionCounts[m.id] > 0).sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
@@ -2931,12 +2932,13 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     putProfile(profile.userKey, updated);
   }, [phase, latestSession, profile?.userKey]);
 
-  if (!latestSession) return null;
-
-  const participants = latestSession.participants || [];
-  const movies = latestSession.movies || [];
+  const participants = latestSession?.participants || [];
+  const movies = latestSession?.movies || [];
   const totalParticipants = participants.length;
   const tmdbData = useTMDBMovieData(movies);
+
+  // Guard AFTER the hook so hook order stays stable across renders (rules-of-hooks).
+  if (!latestSession) return null;
 
   // ── Waiting for swipes ──
   if (phase === "waiting") {
@@ -2963,7 +2965,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
 
   const unanimousYes = movies.filter(m => voteCounts[m.id] === totalParticipants);
   const majorityYes = movies
-    .filter(m => voteCounts[m.id] > 1 && voteCounts[m.id] < totalParticipants)
+    .filter(m => voteCounts[m.id] > totalParticipants / 2 && voteCounts[m.id] < totalParticipants)
     .sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
   const isTwo = totalParticipants <= 2;
 
@@ -3811,8 +3813,10 @@ function rankFinalists(items, participants, { ratingOf, tagsOf, pickedOf }) {
 }
 
 // Compute the pool of restaurants the group "agreed" on, mirroring the movie
-// yes-pool logic: prefer unanimous yes, else a real majority, else any spot that
-// got at least one yes. Returned restaurants are ranked yeses-then-rating.
+// yes-pool logic: prefer unanimous yes, else a real majority (more than half).
+// If nobody clears majority, return nothing so FoodResultsScreen shows "No
+// matches" — rather than crowning a spot only one person liked (which the old
+// "any ≥1 yes" fallback did in 2-person sessions). Ranked yeses-then-rating.
 function foodAgreedPool(s) {
   const participants = s.participants || [];
   const restaurants = s.restaurants || [];
@@ -3821,9 +3825,7 @@ function foodAgreedPool(s) {
   const rank = (a, b) => (yesOf(b) - yesOf(a)) || ((b.rating || 0) - (a.rating || 0));
   const unanimous = restaurants.filter(r => totalP > 0 && yesOf(r) === totalP);
   if (unanimous.length) return unanimous.sort(rank);
-  const majority = restaurants.filter(r => yesOf(r) > 1 && yesOf(r) < totalP).sort(rank);
-  if (totalP > 2 && majority.length) return majority;
-  return restaurants.filter(r => yesOf(r) > 0).sort(rank);
+  return restaurants.filter(r => yesOf(r) > totalP / 2 && yesOf(r) < totalP).sort(rank);
 }
 
 // ─── Food Results (agree → narrow with hearts → final picks) ──────────────────
