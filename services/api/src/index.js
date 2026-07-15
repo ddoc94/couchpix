@@ -4,6 +4,17 @@ const TMDB_BASE = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
 const SESSION_TTL = 60 * 60 * 24;          // 24 hours
 const PROFILE_TTL = 60 * 60 * 24 * 90;     // 90 days — sliding window, refreshed on each write
+const MAX_BODY_BYTES = 512 * 1024;         // cap on a stored session/profile blob (~10x real size)
+
+// Guard a write body before storing it: enforce a size cap and require valid
+// JSON. Returns an error Response to short-circuit with, or null if acceptable.
+// (Sessions/profiles are stored under guessable keys with no auth, so we don't
+// want to store attacker-controlled garbage or oversized blobs.)
+function badBody(body) {
+  if (body.length > MAX_BODY_BYTES) return json({ error: "payload too large" }, 413);
+  try { JSON.parse(body); } catch { return json({ error: "invalid json" }, 400); }
+  return null;
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -85,6 +96,8 @@ export default {
       }
       if (request.method === "PUT") {
         const body = await request.text();
+        const bad = badBody(body);
+        if (bad) return bad;
         await env.SESSIONS.put(userKey, body, { expirationTtl: PROFILE_TTL });
         return json({ ok: true });
       }
@@ -487,6 +500,8 @@ export class SessionRoom {
     }
     if (request.method === "PUT") {
       const body = await request.text();
+      const bad = badBody(body);
+      if (bad) return bad;
       await this.state.storage.put("data", body);
       await this.state.storage.setAlarm(Date.now() + SESSION_TTL * 1000);
       return json({ ok: true });
@@ -496,8 +511,10 @@ export class SessionRoom {
     // wrapped in blockConcurrencyWhile so overlapping PATCHes serialize and can't
     // clobber each other the way a client GET-modify-PUT of the whole blob did.
     if (request.method === "PATCH") {
-      let patch;
-      try { patch = JSON.parse(await request.text()); } catch { return json({ error: "bad json" }, 400); }
+      const raw = await request.text();
+      const bad = badBody(raw);
+      if (bad) return bad;
+      const patch = JSON.parse(raw); // badBody already validated it parses
       const p = patch && patch.participant;
       if (!p || !p.id) return json({ error: "participant.id required" }, 400);
 
