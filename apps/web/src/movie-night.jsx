@@ -129,6 +129,23 @@ async function putSession(session) {
   } catch {}
 }
 
+// Atomically add-or-merge a single participant server-side (in the session's
+// Durable Object), avoiding the lost-update race of a client GET-modify-PUT of
+// the whole session. Used for joining and for submitting swipe votes — the two
+// paths most likely to run concurrently across devices. Returns the updated
+// session, or null on failure.
+async function patchParticipant(sessionId, participant) {
+  try {
+    const res = await fetch(`${TMDB_PROXY}/session/${sessionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ participant }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
 // Adaptive polling: fetch the session and run `onData(s)` for every result, but
 // space fetches out (min → max, ×factor) while the session is UNCHANGED, snapping
 // back to fast on any change or when the tab/app regains focus. Same UX as fixed
@@ -690,17 +707,12 @@ export default function MovieNightApp() {
     if (nameToUse) {
       const alreadyIn = s.participants?.some(p => p.id === userId);
       if (alreadyIn) {
+        // Don't re-add (would reset our votes/prefs) — just adopt the fresh copy.
         setSession(s);
       } else {
-        const updated = {
-          ...s,
-          participants: [
-            ...s.participants,
-            { id: userId, name: nameToUse, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false },
-          ],
-        };
-        setSession(updated);
-        putSession(updated);
+        const me = { id: userId, name: nameToUse, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
+        const updated = await patchParticipant(sid, me);
+        setSession(updated || { ...s, participants: [...(s.participants || []), me] });
       }
       setScreen("lobby");
     } else {
@@ -2060,13 +2072,16 @@ function JoinScreen({ session, userId, userName, setUserName, onJoined, onSessio
     if (!sid) return setError("Please enter a session code");
     setJoining(true);
     setError("");
-    getSession(sid).then(s => {
+    getSession(sid).then(async s => {
       if (!s) { setError("Session not found. Check the code or ask the host to reshare the link."); setJoining(false); return; }
-      if (!s.participants.find(p => p.id === userId)) {
-        s.participants.push({ id: userId, name: localName.trim(), votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false });
-      }
       setUserName(localName.trim());
-      putSession(s).then(() => { setJoining(false); onJoined(s); });
+      if (s.participants.find(p => p.id === userId)) {
+        setJoining(false); onJoined(s); return; // already a member — don't reset our state
+      }
+      const me = { id: userId, name: localName.trim(), votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
+      const updated = await patchParticipant(sid, me);
+      setJoining(false);
+      onJoined(updated || { ...s, participants: [...s.participants, me] });
     });
   };
 
@@ -2223,17 +2238,12 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
   const submitFinal = () => {
     if (submitting) return;
     setSubmitting(true);
-    getSession(session.id).then(stored => {
-      if (!stored) { setSubmitting(false); return; }
-      const me = stored.participants?.find(p => p.id === userId);
-      if (me) {
-        me.votes = votes;
-        me.done = true;
-        me.passionPick = myPassionPick;
-      }
-      stored.movies = movies;
-      putSession(stored).then(() => onDone({ ...stored }));
-    });
+    // Atomic per-participant merge — no full-session PUT, so a simultaneous
+    // submitter can't overwrite our done:true with their stale snapshot (which
+    // used to strand ResultsScreen on "Waiting for everyone…"). The movie deck is
+    // already persisted from generation, so we don't re-write it here.
+    patchParticipant(session.id, { id: userId, votes, done: true, passionPick: myPassionPick })
+      .then(updated => onDone(updated || session));
   };
 
   // ── Compute "why this matched" badges for the current card ──
@@ -2982,6 +2992,11 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
       discoverMovies(stored).then(newMovies => {
         stored.movies = newMovies;
         stored.round = (stored.round || 1) + 1;
+        // Clear the previous round's heart pool/round too — otherwise the next
+        // results pass maps stale movie ids against the new deck and shows an
+        // empty/garbage heart list.
+        stored.heartPool = undefined;
+        stored.heartRound = undefined;
         stored.participants = stored.participants.map(p => ({ ...p, votes: {}, done: false, heart: undefined }));
         putSession(stored).then(() => {
           setHeartPool(null);
@@ -3751,13 +3766,10 @@ function FoodSwipingScreen({ session, userId, onDone }) {
   const finish = (finalVotes) => {
     if (submitting) return;
     setSubmitting(true);
-    getSession(session.id).then(stored => {
-      if (!stored) { setSubmitting(false); return; }
-      const me = stored.participants?.find(p => p.id === userId);
-      if (me) { me.votes = finalVotes; me.done = true; }
-      stored.restaurants = restaurants;
-      putSession(stored).then(() => onDone({ ...stored }));
-    });
+    // Atomic per-participant merge (see SwipingScreen.submitFinal). Restaurants
+    // are already persisted from discovery, so no full-session re-write.
+    patchParticipant(session.id, { id: userId, votes: finalVotes, done: true })
+      .then(updated => onDone(updated || session));
   };
 
   if (submitting || idx >= restaurants.length) {

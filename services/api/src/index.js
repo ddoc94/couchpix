@@ -7,7 +7,7 @@ const PROFILE_TTL = 60 * 60 * 24 * 90;     // 90 days — sliding window, refres
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, PUT, PATCH, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "*",
 };
 
@@ -104,7 +104,8 @@ export default {
     const sessionMatch = url.pathname.match(/^\/session\/([A-Z0-9]{4,10})$/i);
     if (sessionMatch) {
       const id = sessionMatch[1].toUpperCase();
-      if (request.method !== "GET" && request.method !== "PUT") {
+      // GET (read) / PUT (full write) / PATCH (atomic single-participant merge).
+      if (!["GET", "PUT", "PATCH"].includes(request.method)) {
         return json({ error: "method not allowed" }, 405);
       }
       const stub = env.SESSION_ROOM.get(env.SESSION_ROOM.idFromName(id));
@@ -489,6 +490,35 @@ export class SessionRoom {
       await this.state.storage.put("data", body);
       await this.state.storage.setAlarm(Date.now() + SESSION_TTL * 1000);
       return json({ ok: true });
+    }
+    // PATCH { participant: {id, ...fields} } — atomically upsert ONE participant
+    // (add if new, else shallow-merge the given fields). The read-modify-write is
+    // wrapped in blockConcurrencyWhile so overlapping PATCHes serialize and can't
+    // clobber each other the way a client GET-modify-PUT of the whole blob did.
+    if (request.method === "PATCH") {
+      let patch;
+      try { patch = JSON.parse(await request.text()); } catch { return json({ error: "bad json" }, 400); }
+      const p = patch && patch.participant;
+      if (!p || !p.id) return json({ error: "participant.id required" }, 400);
+
+      let status = 200, out = null;
+      await this.state.blockConcurrencyWhile(async () => {
+        const raw = await this.state.storage.get("data");
+        if (!raw) { status = 404; return; }
+        let session;
+        try { session = JSON.parse(raw); } catch { status = 500; return; }
+        if (!Array.isArray(session.participants)) session.participants = [];
+        const i = session.participants.findIndex(x => x.id === p.id);
+        if (i === -1) session.participants.push(p);
+        else session.participants[i] = { ...session.participants[i], ...p };
+        out = JSON.stringify(session);
+        await this.state.storage.put("data", out);
+        await this.state.storage.setAlarm(Date.now() + SESSION_TTL * 1000);
+      });
+
+      if (status === 404) return json({ error: "not found" }, 404);
+      if (status === 500) return json({ error: "corrupt session" }, 500);
+      return new Response(out, { headers: { "Content-Type": "application/json", ...CORS } });
     }
     return json({ error: "method not allowed" }, 405);
   }
