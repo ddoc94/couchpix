@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyStreamingFilter, GENRES, LANGUAGES, SERVICES, PROVIDER_MAP } from './utils.js';
+import { applyStreamingFilter, rankFinalists, foodAgreedPool, GENRES, LANGUAGES, SERVICES, PROVIDER_MAP } from './utils.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -237,5 +237,116 @@ describe('PROVIDER_MAP', () => {
     Object.values(PROVIDER_MAP).forEach(sid => {
       expect(serviceIds.has(sid)).toBe(true);
     });
+  });
+});
+
+// ─── rankFinalists ─────────────────────────────────────────────────────────────
+
+describe('rankFinalists', () => {
+  const opts = { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.picks };
+
+  it('ranks most-hearted first, regardless of rating', () => {
+    const items = [{ id: 'a', imdb: 9, genres: [] }, { id: 'b', imdb: 5, genres: [] }];
+    const parts = [{ id: 'p1', heart: 'b' }, { id: 'p2', heart: 'b' }, { id: 'p3', heart: 'a' }];
+    expect(rankFinalists(items, parts, opts)[0].id).toBe('b'); // 2 hearts beats higher-rated a (1 heart)
+  });
+
+  it('breaks heart ties by higher rating', () => {
+    const items = [{ id: 'a', imdb: 7, genres: [] }, { id: 'b', imdb: 8, genres: [] }];
+    const parts = [{ id: 'p1', heart: 'a' }, { id: 'p2', heart: 'b' }]; // 1 heart each
+    expect(rankFinalists(items, parts, opts)[0].id).toBe('b');
+  });
+
+  it('breaks heart+rating ties by most matched criteria (the movie example)', () => {
+    const items = [
+      { id: 'm1', imdb: 7, genres: ['Thriller', 'Drama', 'Horror'] },
+      { id: 'm2', imdb: 7, genres: ['Thriller', 'Fantasy', 'Adventure'] },
+    ];
+    const parts = [
+      { id: 'p1', picks: ['Thriller', 'Drama', 'Comedy'] },
+      { id: 'p2', picks: ['Thriller', 'Horror', 'Action'] },
+    ];
+    // m1 matches 4 (Thriller+Drama, Thriller+Horror); m2 matches 2 (Thriller, Thriller)
+    expect(rankFinalists(items, parts, opts)[0].id).toBe('m1');
+  });
+
+  it('matches criteria case-insensitively', () => {
+    const items = [{ id: 'a', imdb: 7, genres: ['thriller'] }, { id: 'b', imdb: 7, genres: ['comedy'] }];
+    const parts = [{ id: 'p1', picks: ['THRILLER'] }];
+    expect(rankFinalists(items, parts, opts)[0].id).toBe('a');
+  });
+
+  it('does not mutate the input array', () => {
+    const items = [{ id: 'a', imdb: 5, genres: [] }, { id: 'b', imdb: 9, genres: [] }];
+    const copy = [...items];
+    rankFinalists(items, [], opts);
+    expect(items).toEqual(copy);
+  });
+
+  it('handles null rating and missing tags without throwing', () => {
+    const items = [{ id: 'a', imdb: null, genres: null }, { id: 'b', imdb: undefined, genres: [] }];
+    expect(() => rankFinalists(items, [{ id: 'p' }], opts)).not.toThrow();
+  });
+});
+
+// ─── foodAgreedPool ────────────────────────────────────────────────────────────
+
+describe('foodAgreedPool', () => {
+  const R = (id, rating = 4) => ({ id, rating });
+  const voter = (id, votes) => ({ id, votes });
+
+  it('returns unanimous picks (everyone said yes)', () => {
+    const s = {
+      participants: [voter('p1', { r1: 'yes', r2: 'no' }), voter('p2', { r1: 'yes', r2: 'yes' })],
+      restaurants: [R('r1'), R('r2')],
+    };
+    expect(foodAgreedPool(s).map(r => r.id)).toEqual(['r1']); // r1 unanimous, r2 only 1/2
+  });
+
+  it('2-person session with no unanimous returns empty (no false winner)', () => {
+    const s = {
+      participants: [voter('p1', { r1: 'yes', r2: 'no' }), voter('p2', { r1: 'no', r2: 'yes' })],
+      restaurants: [R('r1'), R('r2')],
+    };
+    expect(foodAgreedPool(s)).toEqual([]); // the #5 fix — was crowning a 1-yes spot
+  });
+
+  it('prefers unanimous over mere majority', () => {
+    const s = {
+      participants: [
+        voter('p1', { r1: 'yes', r2: 'yes' }),
+        voter('p2', { r1: 'yes', r2: 'yes' }),
+        voter('p3', { r1: 'yes', r2: 'no' }),
+      ],
+      restaurants: [R('r1'), R('r2')],
+    };
+    expect(foodAgreedPool(s).map(r => r.id)).toEqual(['r1']); // r1 unanimous(3), r2 majority(2) excluded
+  });
+
+  it('3-person: 2 of 3 is a majority, 1 of 3 is not', () => {
+    const s = {
+      participants: [voter('p1', { a: 'yes', b: 'yes' }), voter('p2', { a: 'yes', b: 'no' }), voter('p3', { a: 'no', b: 'no' })],
+      restaurants: [R('a'), R('b')],
+    };
+    expect(foodAgreedPool(s).map(r => r.id)).toEqual(['a']); // a=2/3 majority; b=1/3 excluded
+  });
+
+  it('ranks multiple majority picks by yes-count then rating', () => {
+    const parts = [0, 1, 2, 3, 4].map(i => ({
+      id: 'p' + i,
+      votes: { r1: i < 4 ? 'yes' : 'no', r2: i < 3 ? 'yes' : 'no', r3: i < 3 ? 'yes' : 'no' },
+    }));
+    const s = { participants: parts, restaurants: [R('r3', 4), R('r2', 5), R('r1', 3)] };
+    // majority (>2.5): r1=4, r2=3, r3=3; sort by yes then rating → r1, r2(5), r3(4)
+    expect(foodAgreedPool(s).map(r => r.id)).toEqual(['r1', 'r2', 'r3']);
+  });
+
+  it('solo session counts the single player as unanimous', () => {
+    const s = { participants: [voter('p1', { r1: 'yes', r2: 'no' })], restaurants: [R('r1'), R('r2')] };
+    expect(foodAgreedPool(s).map(r => r.id)).toEqual(['r1']);
+  });
+
+  it('handles missing participants/restaurants', () => {
+    expect(foodAgreedPool({})).toEqual([]);
   });
 });
