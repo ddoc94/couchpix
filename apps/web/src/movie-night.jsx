@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, ACTIVITIES, pickRandomQuestion, drawFromBag } from "./utils.js";
+import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, rankFinalists, foodAgreedPool, ACTIVITIES, pickRandomQuestion, drawFromBag } from "./utils.js";
 
 // ─── Palette & Theme ───────────────────────────────────────────────────────────
 // Blueprint: cool, technical, fresh. Soft blue-gray base with electric blue accent
@@ -3791,41 +3791,6 @@ function FoodSwipingScreen({ session, userId, onDone }) {
       </div>
     </div>
   );
-}
-
-// Order the agreed finalists for the results screen, picking a single winner.
-// Most hearts wins first (hearts are the primary narrowing signal); ties break
-// by higher rating, then by how many user-picked criteria the item matches
-// (genres for movies, cuisines for restaurants — summed across all participants).
-function rankFinalists(items, participants, { ratingOf, tagsOf, pickedOf }) {
-  const heartOf = it => participants.filter(p => p.heart === it.id).length;
-  const matchOf = (it) => {
-    const tags = (tagsOf(it) || []).map(t => String(t).toLowerCase());
-    if (!tags.length) return 0;
-    return participants.reduce((sum, p) =>
-      sum + (pickedOf(p) || []).filter(t => tags.includes(String(t).toLowerCase())).length, 0);
-  };
-  return [...items].sort((a, b) =>
-    heartOf(b) - heartOf(a) ||
-    (ratingOf(b) || 0) - (ratingOf(a) || 0) ||
-    matchOf(b) - matchOf(a)
-  );
-}
-
-// Compute the pool of restaurants the group "agreed" on, mirroring the movie
-// yes-pool logic: prefer unanimous yes, else a real majority (more than half).
-// If nobody clears majority, return nothing so FoodResultsScreen shows "No
-// matches" — rather than crowning a spot only one person liked (which the old
-// "any ≥1 yes" fallback did in 2-person sessions). Ranked yeses-then-rating.
-function foodAgreedPool(s) {
-  const participants = s.participants || [];
-  const restaurants = s.restaurants || [];
-  const totalP = participants.length;
-  const yesOf = r => participants.filter(p => p.votes?.[r.id] === "yes").length;
-  const rank = (a, b) => (yesOf(b) - yesOf(a)) || ((b.rating || 0) - (a.rating || 0));
-  const unanimous = restaurants.filter(r => totalP > 0 && yesOf(r) === totalP);
-  if (unanimous.length) return unanimous.sort(rank);
-  return restaurants.filter(r => yesOf(r) > totalP / 2 && yesOf(r) < totalP).sort(rank);
 }
 
 // ─── Food Results (agree → narrow with hearts → final picks) ──────────────────
