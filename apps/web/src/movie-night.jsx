@@ -7,24 +7,37 @@ import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, rankFi
 // and amber as the secondary gold-ish color (true yellow gold reads muddy on a cool
 // background). The action bar / floating elements use the bg color for their backdrop
 // fade so they blend seamlessly with the rest of the UI.
+// ── "Matinee" palette — editorial daylight ──────────────────────────────────
+// Cool porcelain ground, white cards, a single deep ink-blue accent, warm
+// hairline borders. Semantic green/red/gold are muted (forest / brick / brass)
+// so they read considered rather than alarm-bright. Everything in the app reads
+// from this object, so re-theming is a single edit here.
 const C = {
-  bg: "#f4f7fa",         // soft blue-gray (page background)
+  bg: "#F3F2EF",         // cool porcelain (page background)
   surface: "#ffffff",    // header, lifted panels
   card: "#ffffff",       // cards (genres, movie rows, results)
-  border: "#dde6ef",     // subtle blue-tinted borders
-  accent: "#2563eb",     // electric blue (primary action)
-  accentSoft: "rgba(37,99,235,0.10)",
-  gold: "#f59e0b",       // amber (super-like star, UNDO highlight)
-  text: "#0f172a",       // slate near-black
-  muted: "#64748b",      // slate gray
-  green: "#059669",      // emerald (Watch / yes vote)
-  greenSoft: "rgba(5,150,105,0.10)",
-  red: "#dc2626",        // red (Skip / no vote, veto, errors)
-  redSoft: "rgba(220,38,38,0.10)",
+  border: "#E4E2DC",     // warm hairline border
+  accent: "#2A3A5C",     // deep ink-blue (primary action)
+  accentSoft: "rgba(42,58,92,0.09)",
+  gold: "#B0872F",       // brass (super-like star, UNDO highlight)
+  text: "#1C222E",       // ink near-black
+  muted: "#727A88",      // slate gray
+  green: "#3F6045",      // muted forest (Watch / yes vote)
+  greenSoft: "rgba(63,96,69,0.10)",
+  red: "#8C3A34",        // brick (Skip / no vote, veto, errors)
+  redSoft: "rgba(140,58,52,0.10)",
   // Backdrop color used for fixed floating bars (action bar etc.) — same as bg
   // so the gradient fade-in feels native rather than as a dark overlay.
-  backdrop: "rgba(244,247,250,0.95)",
+  backdrop: "rgba(243,242,239,0.95)",
 };
+
+// ── Type system ──────────────────────────────────────────────────────────────
+// One sans for the whole UI; a refined serif reserved for the *Pix brand
+// wordmarks (CouchPix / NetPix / FoodPix); monospace only for session codes,
+// where it's the correct semantic. This unifies what used to be a Helvetica +
+// Georgia + monospace mix.
+const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif";
+const SERIF = "'New York', 'Iowan Old Style', ui-serif, Georgia, serif";
 
 
 
@@ -563,10 +576,10 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
     >
       {/* YES / NO overlays */}
       {decision === "yes" && (
-        <div style={{ position:"absolute", top:20, left:20, zIndex:20, border:`4px solid ${C.green}`, borderRadius:8, padding:"8px 20px", transform:"rotate(-15deg)", color:C.green, fontSize:28, fontWeight:900, fontFamily:"monospace" }}>WATCH</div>
+        <div style={{ position:"absolute", top:20, left:20, zIndex:20, border:`2.5px solid ${C.green}`, borderRadius:8, padding:"7px 18px", transform:"rotate(-13deg)", color:C.green, fontSize:24, fontWeight:800, letterSpacing:2 }}>WATCH</div>
       )}
       {decision === "no" && (
-        <div style={{ position:"absolute", top:20, right:20, zIndex:20, border:`4px solid ${C.red}`, borderRadius:8, padding:"8px 20px", transform:"rotate(15deg)", color:C.red, fontSize:28, fontWeight:900, fontFamily:"monospace" }}>SKIP</div>
+        <div style={{ position:"absolute", top:20, right:20, zIndex:20, border:`2.5px solid ${C.red}`, borderRadius:8, padding:"7px 18px", transform:"rotate(13deg)", color:C.red, fontSize:24, fontWeight:800, letterSpacing:2 }}>SKIP</div>
       )}
 
       <div style={{ background: C.card, borderRadius:20, overflow:"hidden", boxShadow:"0 16px 40px rgba(15,23,42,0.12)", border:`1px solid ${C.border}` }}>
@@ -576,7 +589,7 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
         {/* Info */}
         <div style={{ padding:"16px 20px 20px" }}>
           <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:6, flexWrap:"wrap" }}>
-            <h2 style={{ margin:0, fontSize:22, fontWeight:800, color:C.text, fontFamily:"'Georgia', serif", lineHeight:1.2 }}>{movie.title}</h2>
+            <h2 style={{ margin:0, fontSize:22, fontWeight:700, color:C.text, letterSpacing:-0.3, lineHeight:1.2 }}>{movie.title}</h2>
             <span style={{ color:C.muted, fontSize:14, flexShrink:0 }}>{movie.year}</span>
             {movie.duration > 0 && (
               <span style={{ color:C.muted, fontSize:14, flexShrink:0 }}>
@@ -893,7 +906,7 @@ export default function MovieNightApp() {
   };
 
   return (
-    <div style={{ height:"100dvh", background:C.bg, color:C.text, fontFamily:"'Helvetica Neue', Arial, sans-serif", display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ height:"100dvh", background:C.bg, color:C.text, fontFamily:FONT, display:"flex", flexDirection:"column", overflow:"hidden" }}>
       <div style={{ flex:1, overflowY:"auto", overscrollBehavior:"none", WebkitOverflowScrolling:"touch" }}>
         <div style={{
           width:"100%",
@@ -1006,7 +1019,7 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
     <div style={{ paddingTop:32, display:"flex", flexDirection:"column", alignItems:"center", gap:18 }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ marginBottom:12, display:"flex", justifyContent:"center" }}><Logo size={140} /></div>
-        <h1 style={{ margin:0, fontSize:32, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-1 }}>CouchPix</h1>
+        <h1 style={{ margin:0, fontSize:32, fontWeight:600, color:C.text, fontFamily:SERIF, letterSpacing:-0.5 }}>CouchPix</h1>
         <p style={{ color:C.muted, fontSize:15, marginTop:6 }}>Swipe with friends to pick what to watch or eat</p>
       </div>
 
@@ -1057,17 +1070,17 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
           Build your Couch Night
         </div>
         <ActivityTile
-          icon="🎬"
+          icon="movie"
           title="NetPix"
           description="Pick the right movie for everyone"
-          color={C.red}
+          tint={C.accent}
           onClick={onStartMovies}
         />
         <ActivityTile
-          icon="🍔"
+          icon="food"
           title="FoodPix"
           description="Pick the right takeout for everyone"
-          color={C.green}
+          tint={C.green}
           onClick={onStartFood}
         />
 
@@ -1075,10 +1088,10 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
           Games
         </div>
         <ActivityTile
-          icon="💬"
+          icon="chat"
           title="Bonding Questions"
           description="Get to know each other like never before"
-          color={C.accent}
+          tint={C.gold}
           onClick={onStartQuestions}
         />
       </div>
@@ -1113,7 +1126,7 @@ function MovieNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:24, alignItems:"center" }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:56, marginBottom:8, lineHeight:1 }}>🎬</div>
-        <h2 style={{ margin:0, fontSize:24, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-0.5 }}>NetPix</h2>
+        <h2 style={{ margin:0, fontSize:24, fontWeight:600, color:C.text, fontFamily:SERIF, letterSpacing:-0.5 }}>NetPix</h2>
         <p style={{ color:C.muted, fontSize:13, margin:"6px 0 0", maxWidth:280, lineHeight:1.5 }}>
           Swipe through movies with friends and pick what to watch together.
         </p>
@@ -3362,7 +3375,7 @@ function FoodNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:24, alignItems:"center" }}>
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:56, marginBottom:8, lineHeight:1 }}>🍔</div>
-        <h2 style={{ margin:0, fontSize:24, fontWeight:900, color:C.text, fontFamily:"Georgia, serif", letterSpacing:-0.5 }}>FoodPix</h2>
+        <h2 style={{ margin:0, fontSize:24, fontWeight:600, color:C.text, fontFamily:SERIF, letterSpacing:-0.5 }}>FoodPix</h2>
         <p style={{ color:C.muted, fontSize:13, margin:"6px 0 0", maxWidth:280, lineHeight:1.5 }}>
           Swipe nearby restaurants with friends and pick where to order from together.
         </p>
@@ -3664,7 +3677,7 @@ function RestaurantCard({ r, index, total, hideCount }) {
 
         {/* Info */}
         <div style={{ padding:"16px 20px 20px" }}>
-          <h2 style={{ margin:"0 0 4px", fontSize:21, fontWeight:800, color:C.text, fontFamily:"Georgia, serif", lineHeight:1.2 }}>{r.name}</h2>
+          <h2 style={{ margin:"0 0 4px", fontSize:21, fontWeight:700, color:C.text, letterSpacing:-0.3, lineHeight:1.2 }}>{r.name}</h2>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:10 }}>
             <span style={{ color:C.muted, fontSize:13 }}>{r.cuisine}</span>
             {price && <span style={{ color:C.muted, fontSize:13 }}>· {price}</span>}
@@ -4024,39 +4037,50 @@ function Thumb({ src, emoji, w, h, radius = 8, fontSize = 24 }) {
 // Big-icon tile used on the home screen to launch an activity (Movie Night,
 // Fun Questions, etc.). One full-width row with icon left, title + description
 // right, and an arrow on the far right.
-function ActivityTile({ icon, title, description, onClick, color = C.accent }) {
+// Simple stroked line icons for the activity tiles — a consistent set that
+// replaces the old emoji (🎬 🍔 💬). Inherit color + size from the parent chip.
+const TILE_ICONS = {
+  movie: <path d="M3 5.5h18v13H3zM3 10h18M7.5 5.5v4.5M12.5 5.5v4.5M17.5 5.5v4.5M7.5 18.5V14M12.5 18.5V14M17.5 18.5V14" />,
+  food: <path d="M6 3v7a2 2 0 0 0 4 0V3M8 10v11M18 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" />,
+  chat: <path d="M4 5.5h16v10H9l-4 3.5v-3.5H4zM8 9.5h8M8 12.5h5" />,
+};
+
+function ActivityTile({ icon, title, description, onClick, tint = C.accent }) {
   return (
     <button
       onClick={onClick}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = C.muted; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; }}
       style={{
         width: "100%",
-        background: color,
-        border: "none",
-        borderRadius: 14,
+        background: C.card,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
         padding: "14px 16px",
         display: "flex",
         alignItems: "center",
         gap: 14,
         cursor: "pointer",
         textAlign: "left",
-        boxShadow: `0 3px 12px ${color}4d`,
-        transition: "all 0.15s",
+        transition: "border-color 0.15s",
       }}
     >
       <div style={{
-        width: 48,
-        height: 48,
-        borderRadius: 12,
-        background: "rgba(255,255,255,0.22)",
+        width: 44,
+        height: 44,
+        borderRadius: 11,
+        background: `${tint}16`,
+        color: tint,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 26,
         flexShrink: 0,
-      }}>{icon}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>{title}</div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.88)", marginTop: 2, lineHeight: 1.4 }}>{description}</div>
+      }}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{TILE_ICONS[icon] || TILE_ICONS.movie}</svg>
       </div>
-      <span style={{ color: "#fff", fontSize: 20, fontWeight: 800, flexShrink: 0 }}>→</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{title}</div>
+        <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2, lineHeight: 1.4 }}>{description}</div>
+      </div>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
     </button>
   );
 }
