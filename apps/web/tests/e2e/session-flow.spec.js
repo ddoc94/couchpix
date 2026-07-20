@@ -230,14 +230,16 @@ test('genre limit enforced (max 3 for small group)', async ({ page, request }) =
   }, session);
   await page.reload();
 
-  // Click 4 genres — 4th should be ignored (button stays inactive).
-  // Use .first() to target the Genres section (Vetoes section has duplicate chips).
-  const genreButtons = ['Action', 'Comedy', 'Horror', 'Drama'];
-  for (const g of genreButtons) {
+  // Select the max of 3 genres. Use .first() to target the Genres section
+  // (the Vetoes section has duplicate chips).
+  for (const g of ['Action', 'Comedy', 'Horror']) {
     await page.getByRole('button', { name: new RegExp(`^${g}$`) }).first().click();
   }
+  await expect(page.getByText(/3\/3 selected/i)).toBeVisible();
 
-  // Expect counter to show 3/3, not 4/3
+  // The 4th genre is now disabled (can't select a 4th) — the limit is enforced
+  // via the real `disabled` attribute, and the counter stays at 3/3.
+  await expect(page.getByRole('button', { name: /^Drama$/ }).first()).toBeDisabled();
   await expect(page.getByText(/3\/3 selected/i)).toBeVisible();
 });
 
