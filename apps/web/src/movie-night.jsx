@@ -857,9 +857,11 @@ export default function MovieNightApp() {
       profile={profile}
       setProfile={setProfile}
       session={session}
-      onContinue={(toInclude) => {
-        const updated = { ...session, savedMovies: toInclude };
-        syncSession(updated);
+      onContinue={async (toInclude) => {
+        // Re-read the latest session before writing so a participant who joined
+        // while this admin-only screen was open isn't wiped by our stale snapshot.
+        const fresh = (await getSession(session.id)) || session;
+        syncSession({ ...fresh, savedMovies: toInclude });
         setScreen("prefs");
       }}
       onSkip={() => setScreen("prefs")}
@@ -986,6 +988,7 @@ function Logo({ size = 40 }) {
       alt="CouchPix"
       width={Math.round(size * (931 / 1024))}
       height={size}
+      onError={e => { e.currentTarget.style.display = "none"; }}
       style={{
         display: "inline-block",
         verticalAlign: "middle",
@@ -1241,6 +1244,11 @@ function QRScanScreen({ onDetected, onCancel }) {
   const rafRef = useRef(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("Point your camera at the QR code");
+  // Hold onDetected in a ref so the camera effect can depend on [] — the parent
+  // passes a fresh inline closure each render, and keying the effect on it would
+  // tear down and restart getUserMedia (camera flicker) on every re-render.
+  const onDetectedRef = useRef(onDetected);
+  useEffect(() => { onDetectedRef.current = onDetected; }, [onDetected]);
 
   // Start camera + decode loop on mount
   useEffect(() => {
@@ -1293,7 +1301,7 @@ function QRScanScreen({ onDetected, onCancel }) {
             if (match) {
               setStatus("Code found — joining…");
               cancelled = true;
-              onDetected(match[1].toUpperCase());
+              onDetectedRef.current(match[1].toUpperCase());
               return;
             } else {
               setStatus("That's a QR code but not a CouchPix one — try again");
@@ -1324,7 +1332,7 @@ function QRScanScreen({ onDetected, onCancel }) {
         streamRef.current = null;
       }
     };
-  }, [onDetected]);
+  }, []);
 
   return (
     <div style={{ paddingTop:20, display:"flex", flexDirection:"column", gap:16, alignItems:"center" }}>
@@ -3302,9 +3310,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
           <div style={{ fontSize:12, color:C.muted, fontWeight:700, letterSpacing:0.5, margin:"4px 0 8px" }}>RUNNERS-UP</div>
           {runnersUp.map(movie => (
             <div key={movie.id} style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8 }}>
-              <div style={{ width:46, height:64, borderRadius:6, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                {movie.poster ? <img src={movie.poster} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:22 }}>🎬</span>}
-              </div>
+              <Thumb src={movie.poster} emoji="🎬" w={46} h={64} radius={6} fontSize={22} />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{movie.title} <span style={{ color:C.muted, fontWeight:400, fontSize:12 }}>{movie.year}</span></div>
                 <div style={{ fontSize:12, color:C.muted, display:"flex", gap:8, marginTop:2 }}>
@@ -3942,9 +3948,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
               border: isHearted ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
               boxShadow: isHearted ? `0 0 16px ${C.accent}33` : "none",
             }}>
-              <div style={{ width:60, height:60, borderRadius:10, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                {r.photo ? <img src={r.photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:26 }}>🍽️</span>}
-              </div>
+              <Thumb src={r.photo} emoji="🍽️" w={60} h={60} radius={10} fontSize={26} />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:800, fontSize:15, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.name}</div>
                 <div style={{ fontSize:12, color:C.muted }}>⭐ {r.rating} · {r.distanceMi} mi{PRICE_LABEL[r.priceLevel] ? ` · ${PRICE_LABEL[r.priceLevel]}` : ""}</div>
@@ -3993,9 +3997,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
             return (
               <a key={r.id} href={r.mapsUri || "#"} target="_blank" rel="noopener noreferrer"
                 style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8, textDecoration:"none" }}>
-                <div style={{ width:54, height:54, borderRadius:8, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  {r.photo ? <img src={r.photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:24 }}>🍽️</span>}
-                </div>
+                <Thumb src={r.photo} emoji="🍽️" w={54} h={54} radius={8} fontSize={24} />
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{r.name}</div>
                   <div style={{ fontSize:12, color:C.muted }}>⭐ {r.rating} · {r.distanceMi} mi{hearts ? ` · ♥ ${hearts}` : ""}</div>
@@ -4035,13 +4037,26 @@ function Field({ label, required, children }) {
 function Chip({ children, active, onClick, disabled, accentColor }) {
   const ac = accentColor || C.accent;
   return (
-    <button onClick={disabled ? undefined : onClick} style={{
+    <button disabled={disabled} aria-disabled={disabled || undefined} onClick={disabled ? undefined : onClick} style={{
       padding:"6px 14px", borderRadius:20, fontSize:13, fontWeight:600, cursor: disabled ? "not-allowed" : "pointer",
       border: `1px solid ${active ? ac : C.border}`,
       background: active ? `${ac}22` : "transparent",
       color: active ? ac : disabled ? C.border : C.muted,
       transition:"all 0.15s",
     }}>{children}</button>
+  );
+}
+
+// Small fixed-size thumbnail that falls back to an emoji if the image is missing
+// or fails to load (poster/photo URLs occasionally 404). Used in results rows.
+function Thumb({ src, emoji, w, h, radius = 8, fontSize = 24 }) {
+  const [err, setErr] = useState(false);
+  return (
+    <div style={{ width:w, height:h, borderRadius:radius, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      {src && !err
+        ? <img src={src} alt="" onError={() => setErr(true)} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+        : <span style={{ fontSize }}>{emoji}</span>}
+    </div>
   );
 }
 
@@ -4087,7 +4102,7 @@ function ActivityTile({ icon, title, description, onClick, color = C.accent }) {
 
 function Btn({ children, onClick, big, outline, disabled, flex }) {
   return (
-    <button onClick={disabled ? undefined : onClick} style={{
+    <button disabled={disabled} aria-disabled={disabled || undefined} onClick={disabled ? undefined : onClick} style={{
       width: big ? "100%" : undefined,
       flex: flex ? 1 : undefined,
       padding: big ? "16px 24px" : "10px 20px",
