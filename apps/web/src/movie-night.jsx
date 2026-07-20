@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, rankFinalists, foodAgreedPool, ACTIVITIES, pickRandomQuestion, drawFromBag } from "./utils.js";
+import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, rankFinalists, movieAgreedPool, foodAgreedPool, ACTIVITIES, pickRandomQuestion, drawFromBag } from "./utils.js";
 
 // ─── Palette & Theme ───────────────────────────────────────────────────────────
 // Blueprint: cool, technical, fresh. Soft blue-gray base with electric blue accent
@@ -2811,23 +2811,22 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
       const allSwipeDone = s.participants.every(p => p.done);
       if (!allSwipeDone) { setPhase("waiting"); return; }
 
-      // Compute the initial yes pool from swipe votes
-      const totalP = s.participants.length;
-      const unanimousIds = new Set(
-        (s.movies || [])
-          .filter(m => s.participants.filter(p => p.votes?.[m.id] === "yes").length === totalP)
-          .map(m => m.id)
-      );
+      // The agreed pool is the SAME set the final screen ranks (unanimous → majority
+      // → passion). Keying the heart gate off this — not just unanimous — means a
+      // majority pool of >2 also forces a heart round, so the group is never dumped
+      // into a >2 final that nobody narrowed.
+      const agreedIds = movieAgreedPool(s).map(m => m.id);
 
-      if (unanimousIds.size <= 2) { setPhase("final"); return; }
+      if (agreedIds.length <= 2) { setPhase("final"); return; }
 
-      // If hearts have been cast, check whether we're still in heart phase or done
+      // >2 agreed → every participant MUST heart one before we advance. Until then
+      // we stay in the heart phase (there is no skip), so the pool always narrows.
       const allHeartDone = s.participants.every(p => p.heart !== undefined);
       if (!allHeartDone) {
         setPhase("heart");
         // Initialize the server-side heart pool on the first device to detect this
         if (!Array.isArray(s.heartPool)) {
-          const initial = { ...s, heartPool: [...unanimousIds], heartRound: 1 };
+          const initial = { ...s, heartPool: agreedIds, heartRound: 1 };
           putSession(initial).then(() => {
             setLatestSession(initial);
             setHeartPool(initial.heartPool);
@@ -2840,7 +2839,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
       // All hearts submitted — compute survivors using the canonical server pool
       const pool = Array.isArray(s.heartPool) && s.heartPool.length
         ? s.heartPool
-        : [...unanimousIds];
+        : agreedIds;
       const heartCounts = {};
       pool.forEach(id => { heartCounts[id] = s.participants.filter(p => p.heart === id).length; });
       const max = Math.max(...Object.values(heartCounts), 0);
@@ -2887,25 +2886,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     // the render scope (which doesn't exist yet at the top of the component).
     const participants = latestSession.participants || [];
     const movies = latestSession.movies || [];
-    const totalP = participants.length;
-    const voteCounts = {};
-    const passionCounts = {};
-    movies.forEach(m => {
-      voteCounts[m.id] = participants.filter(p => p.votes?.[m.id] === "yes").length;
-      passionCounts[m.id] = participants.filter(p => p.passionPick === m.id && p.votes?.[m.id] === "yes").length;
-    });
-    const scoreOf = id => (voteCounts[id] || 0) + 2 * (passionCounts[id] || 0);
-    const unanimousYes = movies.filter(m => voteCounts[m.id] === totalP);
-    const majorityYes = movies
-      .filter(m => voteCounts[m.id] > totalP / 2 && voteCounts[m.id] < totalP)
-      .sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
-    const isTwo = totalP <= 2;
-    const passionMovies = movies.filter(m => passionCounts[m.id] > 0).sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
-    let yesMovies;
-    if (unanimousYes.length > 0) yesMovies = unanimousYes;
-    else if (!isTwo && majorityYes.length > 0) yesMovies = majorityYes;
-    else if (passionMovies.length > 0) yesMovies = passionMovies;
-    else yesMovies = [];
+    const yesMovies = movieAgreedPool(latestSession);
 
     const finalMovies = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres });
     if (!finalMovies.length) return;
@@ -2961,39 +2942,11 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     );
   }
 
-  // Tally swipe votes + passion picks. A passion pick is worth +2 points on a movie
-  // the user said yes to — enough to break ties but not override a clear majority.
-  const voteCounts = {};
-  const passionCounts = {};
-  movies.forEach(m => {
-    voteCounts[m.id] = participants.filter(p => p.votes?.[m.id] === "yes").length;
-    passionCounts[m.id] = participants.filter(p => p.passionPick === m.id && p.votes?.[m.id] === "yes").length;
-  });
-  const scoreOf = id => (voteCounts[id] || 0) + 2 * (passionCounts[id] || 0);
-
-  const unanimousYes = movies.filter(m => voteCounts[m.id] === totalParticipants);
-  const majorityYes = movies
-    .filter(m => voteCounts[m.id] > totalParticipants / 2 && voteCounts[m.id] < totalParticipants)
-    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
+  // The agreed pool (unanimous → majority → passion rescue). Same helper the heart
+  // gate and the profile-save effect use, so the pool the group hearts is exactly
+  // the pool ranked here. isTwo only affects the "no match" copy below.
   const isTwo = totalParticipants <= 2;
-
-  // Passion-pick rescue: if nothing got unanimous/majority, but at least one
-  // person used their star on a movie they said yes to, surface those movies.
-  // This is the "everyone shrugged" tiebreaker the star was designed for.
-  const passionMovies = movies
-    .filter(m => passionCounts[m.id] > 0)
-    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
-
-  let yesMovies;
-  if (unanimousYes.length > 0) {
-    yesMovies = unanimousYes;
-  } else if (!isTwo && majorityYes.length > 0) {
-    yesMovies = majorityYes;
-  } else if (passionMovies.length > 0) {
-    yesMovies = passionMovies;
-  } else {
-    yesMovies = [];
-  }
+  const yesMovies = movieAgreedPool(latestSession);
   const noMatch = yesMovies.length === 0;
 
   const doNewRound = () => {
@@ -3152,8 +3105,11 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   // so React's hook-order invariant isn't violated)
 
   // Update the watch status of a specific movie inside the current session's entry.
-  // Used by the "We're watching this" button below. Marking watched also removes the
-  // movie from savedLater so it doesn't get proposed again.
+  // Used by the "We're watching this" buttons on the winner AND the runners-up. Only
+  // one movie can be "watched" per night, so marking one watched demotes every other
+  // pick in the session back to "unconfirmed" (lets the group override the top pick
+  // and actually watch a runner-up). Marking watched also removes the movie from
+  // savedLater so it doesn't get proposed again.
   const setWatchStatus = (movieId, status) => {
     if (!profile?.userKey) return;
     const sessions = profile.sessions || [];
@@ -3161,7 +3117,11 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
       s.id !== latestSession.id ? s : {
         ...s,
         finalMovies: (s.finalMovies || []).map(m =>
-          m.id === movieId ? { ...m, watchStatus: status } : m
+          m.id === movieId
+            ? { ...m, watchStatus: status }
+            : status === "watched"
+              ? { ...m, watchStatus: "unconfirmed" }
+              : m
         ),
       }
     );
@@ -3200,6 +3160,42 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     const updated = { ...profile, savedLater: (profile.savedLater || []).filter(m => m.id !== movieId) };
     setProfile(updated);
     putProfile(profile.userKey, updated);
+  };
+
+  // "We're watching this" + "Save for later" for a given movie — rendered on the
+  // winner AND each runner-up so the group can override the top pick and watch a
+  // runner-up instead. Signed-in users only (watch status lives on the profile).
+  const watchButtons = (movie) => {
+    if (!profile?.userKey) return null;
+    const status = watchStatusOf(movie.id);
+    const isWatched = status === "watched";
+    const saved = isSavedForLater(movie.id);
+    return (
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
+        <button
+          onClick={() => setWatchStatus(movie.id, isWatched ? "unconfirmed" : "watched")}
+          style={{
+            background: isWatched ? C.greenSoft : "transparent",
+            border: `1px solid ${isWatched ? C.green : C.border}`,
+            color: isWatched ? C.green : C.muted,
+            borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, cursor:"pointer",
+          }}
+        >
+          {isWatched ? "✓ Watching tonight" : "We're watching this →"}
+        </button>
+        <button
+          onClick={() => saved ? removeSavedForLater(movie.id) : saveForLater(movie.id)}
+          style={{
+            background: saved ? C.accentSoft : "transparent",
+            border: `1px solid ${saved ? C.accent : C.border}`,
+            color: saved ? C.accent : C.muted,
+            borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, cursor:"pointer",
+          }}
+        >
+          {saved ? "📌 Saved for later" : "📌 Save for later"}
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -3261,46 +3257,8 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
                 return svc ? <span key={s} style={{ background:`${svc.color}22`, color:svc.color, border:`1px solid ${svc.color}55`, borderRadius:5, padding:"1px 6px", fontSize:10, fontWeight:600 }}>{svc.label}</span> : null;
               })}
             </div>
-            {/* "We're watching this" + "Save for Later" — signed-in users only. */}
-            {profile?.userKey && (() => {
-              const status = watchStatusOf(movie.id);
-              const isWatched = status === "watched";
-              const saved = isSavedForLater(movie.id);
-              return (
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
-                  <button
-                    onClick={() => setWatchStatus(movie.id, isWatched ? "unconfirmed" : "watched")}
-                    style={{
-                      background: isWatched ? C.greenSoft : "transparent",
-                      border: `1px solid ${isWatched ? C.green : C.border}`,
-                      color: isWatched ? C.green : C.muted,
-                      borderRadius:8,
-                      padding:"6px 10px",
-                      fontSize:11,
-                      fontWeight:700,
-                      cursor:"pointer",
-                    }}
-                  >
-                    {isWatched ? "✓ Watching tonight" : "We're watching this →"}
-                  </button>
-                  <button
-                    onClick={() => saved ? removeSavedForLater(movie.id) : saveForLater(movie.id)}
-                    style={{
-                      background: saved ? C.accentSoft : "transparent",
-                      border: `1px solid ${saved ? C.accent : C.border}`,
-                      color: saved ? C.accent : C.muted,
-                      borderRadius:8,
-                      padding:"6px 10px",
-                      fontSize:11,
-                      fontWeight:700,
-                      cursor:"pointer",
-                    }}
-                  >
-                    {saved ? "📌 Saved for later" : "📌 Save for later"}
-                  </button>
-                </div>
-              );
-            })()}
+            {/* "We're watching this" + "Save for later" — signed-in users only. */}
+            {watchButtons(movie)}
           </div>
         </div>
       ))}
@@ -3309,7 +3267,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
         <div>
           <div style={{ fontSize:12, color:C.muted, fontWeight:700, letterSpacing:0.5, margin:"4px 0 8px" }}>RUNNERS-UP</div>
           {runnersUp.map(movie => (
-            <div key={movie.id} style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8 }}>
+            <div key={movie.id} style={{ display:"flex", alignItems:"flex-start", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8 }}>
               <Thumb src={movie.poster} emoji="🎬" w={46} h={64} radius={6} fontSize={22} />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{movie.title} <span style={{ color:C.muted, fontWeight:400, fontSize:12 }}>{movie.year}</span></div>
@@ -3318,6 +3276,9 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
                   <span style={{ color:"#fa4b3a" }}>🍅 {movie.rt}%</span>
                   {(heartCounts[movie.id] ?? 0) > 0 && <span style={{ color:C.accent, fontWeight:700 }}>♥ {heartCounts[movie.id]}</span>}
                 </div>
+                {/* Same watch/save controls as the winner, so a runner-up can be
+                    chosen instead of the top pick. */}
+                {watchButtons(movie)}
               </div>
             </div>
           ))}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyStreamingFilter, rankFinalists, foodAgreedPool, GENRES, LANGUAGES, SERVICES, PROVIDER_MAP } from './utils.js';
+import { applyStreamingFilter, rankFinalists, movieAgreedPool, foodAgreedPool, GENRES, LANGUAGES, SERVICES, PROVIDER_MAP } from './utils.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -286,6 +286,80 @@ describe('rankFinalists', () => {
   it('handles null rating and missing tags without throwing', () => {
     const items = [{ id: 'a', imdb: null, genres: null }, { id: 'b', imdb: undefined, genres: [] }];
     expect(() => rankFinalists(items, [{ id: 'p' }], opts)).not.toThrow();
+  });
+});
+
+// ─── movieAgreedPool ─────────────────────────────────────────────────────────
+
+describe('movieAgreedPool', () => {
+  const M = (id) => ({ id });
+  const voter = (id, votes, passionPick) => ({ id, votes, passionPick });
+
+  it('returns unanimous yes movies', () => {
+    const s = {
+      participants: [voter('p1', { m1: 'yes', m2: 'no' }), voter('p2', { m1: 'yes', m2: 'yes' })],
+      movies: [M('m1'), M('m2')],
+    };
+    expect(movieAgreedPool(s).map(m => m.id)).toEqual(['m1']);
+  });
+
+  it('falls back to true majority (3+ people) when nothing is unanimous', () => {
+    const s = {
+      participants: [
+        voter('p1', { m1: 'yes', m2: 'yes' }),
+        voter('p2', { m1: 'yes', m2: 'no' }),
+        voter('p3', { m1: 'no', m2: 'no' }),
+      ],
+      movies: [M('m1'), M('m2')],
+    };
+    // m1 = 2/3 majority, m2 = 1/3 excluded
+    expect(movieAgreedPool(s).map(m => m.id)).toEqual(['m1']);
+  });
+
+  it('keeps a >2 majority pool intact so the heart round can narrow it', () => {
+    // 3 people, 4 movies each cleared by a 2/3 majority but none unanimous.
+    // The old unanimous-only gate skipped hearts here; this is the bug the fix closes.
+    const s = {
+      participants: [
+        voter('p1', { m1: 'yes', m2: 'yes', m3: 'yes', m4: 'no' }),
+        voter('p2', { m1: 'yes', m2: 'yes', m3: 'no', m4: 'yes' }),
+        voter('p3', { m1: 'no', m2: 'no', m3: 'yes', m4: 'yes' }),
+      ],
+      movies: [M('m1'), M('m2'), M('m3'), M('m4')],
+    };
+    expect(movieAgreedPool(s).map(m => m.id).sort()).toEqual(['m1', 'm2', 'm3', 'm4']);
+  });
+
+  it('does NOT use majority for a 2-person session', () => {
+    const s = {
+      participants: [voter('p1', { m1: 'yes', m2: 'no' }), voter('p2', { m1: 'no', m2: 'yes' })],
+      movies: [M('m1'), M('m2')],
+    };
+    expect(movieAgreedPool(s)).toEqual([]); // no unanimous, majority disabled for 2
+  });
+
+  it('passion-pick rescue surfaces a starred yes when nothing else agrees', () => {
+    const s = {
+      participants: [
+        voter('p1', { m1: 'yes', m2: 'no' }, 'm1'),
+        voter('p2', { m1: 'no', m2: 'no' }),
+      ],
+      movies: [M('m1'), M('m2')],
+    };
+    // no unanimous, 2-person so no majority; p1 starred m1 (and said yes) → m1
+    expect(movieAgreedPool(s).map(m => m.id)).toEqual(['m1']);
+  });
+
+  it('ignores a passion pick the user voted no on', () => {
+    const s = {
+      participants: [voter('p1', { m1: 'no' }, 'm1'), voter('p2', { m1: 'no' })],
+      movies: [M('m1')],
+    };
+    expect(movieAgreedPool(s)).toEqual([]);
+  });
+
+  it('handles missing participants/movies', () => {
+    expect(movieAgreedPool({})).toEqual([]);
   });
 });
 

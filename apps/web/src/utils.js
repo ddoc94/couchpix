@@ -97,6 +97,39 @@ export function rankFinalists(items, participants, { ratingOf, tagsOf, pickedOf 
   );
 }
 
+// Compute the pool of movies the group "agreed" on: prefer unanimous yes, else a
+// real majority (more than half, but not everyone) for 3+ people, else a
+// passion-pick rescue (someone starred a movie they said yes to). Empty = "no
+// match". This is the SINGLE source of truth for the yes-pool — the results screen
+// renders it AND the heart-round gate keys off its size, so a majority pool of >2
+// triggers hearts just like a unanimous one (otherwise the group is dumped straight
+// to a >2 final that nobody got to narrow). Priority mirrors the food pool but adds
+// the passion tier. Returned unsorted for the caller to rank.
+export function movieAgreedPool(s) {
+  const participants = s.participants || [];
+  const movies = s.movies || [];
+  const totalP = participants.length;
+  const voteCounts = {};
+  const passionCounts = {};
+  movies.forEach(m => {
+    voteCounts[m.id] = participants.filter(p => p.votes?.[m.id] === "yes").length;
+    passionCounts[m.id] = participants.filter(p => p.passionPick === m.id && p.votes?.[m.id] === "yes").length;
+  });
+  const scoreOf = id => (voteCounts[id] || 0) + 2 * (passionCounts[id] || 0);
+  const unanimousYes = movies.filter(m => totalP > 0 && voteCounts[m.id] === totalP);
+  const majorityYes = movies
+    .filter(m => voteCounts[m.id] > totalP / 2 && voteCounts[m.id] < totalP)
+    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
+  const isTwo = totalP <= 2;
+  const passionMovies = movies
+    .filter(m => passionCounts[m.id] > 0)
+    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
+  if (unanimousYes.length > 0) return unanimousYes;
+  if (!isTwo && majorityYes.length > 0) return majorityYes;
+  if (passionMovies.length > 0) return passionMovies;
+  return [];
+}
+
 // Compute the pool of restaurants the group "agreed" on, mirroring the movie
 // yes-pool logic: prefer unanimous yes, else a real majority (more than half).
 // If nobody clears majority, return nothing so FoodResultsScreen shows "No
