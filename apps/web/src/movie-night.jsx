@@ -991,15 +991,16 @@ export default function MovieNightApp() {
 }
 
 // ─── Brand Logo ───────────────────────────────────────────────────────────────
-// The CouchPix mark: a phone framing three swipe cards (red play / blue check /
-// green fork & knife). Served as a raster asset from public/logo.png — the
-// natural artwork is 931x1024 (portrait). The `size` prop sets the rendered HEIGHT.
+// The CouchPix mark: a phone framing three swipe cards (rose play / blue check /
+// green fork & knife). Vector-traced from the owner's artwork; served as crisp
+// SVG (public/logo.svg), with public/logo.png as the raster master for the PWA
+// icons. The artwork is 1320x1550 (portrait); `size` sets the rendered HEIGHT.
 function Logo({ size = 40 }) {
   return (
     <img
-      src="/logo.png"
+      src="/logo.svg"
       alt="CouchPix"
-      width={Math.round(size * (931 / 1024))}
+      width={Math.round(size * (1320 / 1550))}
       height={size}
       onError={e => { e.currentTarget.style.display = "none"; }}
       style={{
