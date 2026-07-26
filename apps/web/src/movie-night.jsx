@@ -39,7 +39,48 @@ const C = {
 const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif";
 const SERIF = "'New York', 'Iowan Old Style', ui-serif, Georgia, serif";
 
+// ── Line-icon set ────────────────────────────────────────────────────────────
+// One consistent 24×24 stroked icon language, replacing the old emoji (🎬 🍔 ⭐
+// 📌 …). Each entry is the icon's inner SVG; <Ico> supplies the sizing, color,
+// and stroke. Monochrome text glyphs that already read cleanly (♥ ✓ ✕ ★) are
+// kept as-is. `filled` fills the shape (used for the rating star / active heart).
+const ICON_PATHS = {
+  film: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7.5 5v14M12 5v14M16.5 5v14" /></>,
+  food: <path d="M6 3v7a2 2 0 0 0 4 0V3M8 10v11M18 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" />,
+  plate: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.4" /></>,
+  camera: <><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13" r="3.2" /></>,
+  bookmark: <path d="M6 3.5h12v17l-6-4-6 4Z" />,
+  share: <><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" /><path d="M12 3v13M8 7l4-4 4 4" /></>,
+  link: <path d="M9.5 14.5l5-5M10.5 6.5l1-1a3.8 3.8 0 0 1 5.4 5.4l-1 1M13.5 17.5l-1 1a3.8 3.8 0 0 1-5.4-5.4l1-1" />,
+  pin: <><path d="M12 21s7-6.3 7-12a7 7 0 1 0-14 0c0 5.7 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></>,
+  save: <><path d="M5 4h11l3 3v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><path d="M8 4v5h6M8 20v-5h8v5" /></>,
+  chat: <path d="M4 5.5h16v10H9l-4 3.5v-3.5H4zM8 9.5h8M8 12.5h5" />,
+  user: <><circle cx="12" cy="8" r="4" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0" /></>,
+  trophy: <path d="M7 4h10v4a5 5 0 0 1-10 0V4ZM7 6H4v1.5a3 3 0 0 0 3 3M17 6h3v1.5a3 3 0 0 1-3 3M9.5 18h5M10 13.5v4.5M14 13.5v4.5M8 21h8" />,
+  refresh: <path d="M4 12a8 8 0 0 1 13.7-5.6L20 8M20 4v4h-4M20 12a8 8 0 0 1-13.7 5.6L4 16M4 20v-4h4" />,
+  heart: <path d="M12 20s-7-4.6-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.4-7 10-7 10Z" />,
+  star: <path d="M12 3.5l2.6 5.5 6 .7-4.4 4.1 1.2 5.9L12 16.9 6.6 19.7l1.2-5.9L3.4 9.7l6-.7L12 3.5Z" />,
+  tomato: <><circle cx="12" cy="14" r="7" /><path d="M9 5.5c1.2 1.3 3 1.4 3 3M15 5.5c-1.2 1.3-3 1.4-3 3M12 5v3.5" /></>,
+  frown: <><circle cx="12" cy="12" r="9" /><path d="M9 9.5h.01M15 9.5h.01M8.8 15.5c1.2-1.2 5.2-1.2 6.4 0" /></>,
+  sparkle: <path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8L12 3Z" />,
+  scooter: <><circle cx="6.5" cy="17.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /><path d="M9 17.5h6M6.5 17.5l3-8.5h3.5l3 6h2.5M13 9h3.5" /></>,
+  takeout: <path d="M5 9h14l-1.4 10.2a1 1 0 0 1-1 .8H7.4a1 1 0 0 1-1-.8L5 9ZM4 6l4 3M20 6l-4 3M8.5 6h7" />,
+  pencil: <path d="M4 20h4L18.5 9.5l-4-4L4 16v4ZM13 5.5l4 4" />,
+  arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
+  arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
+};
 
+function Ico({ name, size = 18, color = "currentColor", stroke = 1.6, filled = false, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24"
+      fill={filled ? color : "none"} stroke={color} strokeWidth={stroke}
+      strokeLinecap="round" strokeLinejoin="round"
+      style={{ flexShrink: 0, display: "inline-block", verticalAlign: "middle", ...style }}
+      aria-hidden="true">
+      {ICON_PATHS[name] || ICON_PATHS.film}
+    </svg>
+  );
+}
 
 function useStorage(key, init) {
   const [val, setVal] = useState(() => {
@@ -449,8 +490,8 @@ function CardTrailerHeader({ movie, posterUrl, height = 280 }) {
             // Key still loading — neutral gradient (the container background), no flash.
             <div style={{ width:"100%", height:"100%" }} />
           ) : (
-            <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:100 }}>
-              <span style={{ filter:"drop-shadow(0 4px 20px rgba(0,0,0,0.5))" }}>🎬</span>
+            <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <Ico name="film" size={76} color={C.muted} stroke={1.3} style={{ filter:"drop-shadow(0 4px 20px rgba(0,0,0,0.12))" }} />
             </div>
           )}
 
@@ -604,10 +645,10 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
           {/* Ratings */}
           <div style={{ display:"flex", gap:8, marginBottom:10 }}>
             <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:`${C.gold}1a`, border:`1px solid ${C.gold}55`, borderRadius:8, padding:"3px 10px", fontSize:13, color:C.gold, fontWeight:700 }}>
-              ⭐ {movie.imdb}<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>IMDb</span>
+              <Ico name="star" size={13} filled /> {movie.imdb}<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>IMDb</span>
             </span>
-            <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:"#fa4b3a1a", border:"1px solid #fa4b3a55", borderRadius:8, padding:"3px 10px", fontSize:13, color:"#fa4b3a", fontWeight:700 }}>
-              🍅 {movie.rt}%<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>RT</span>
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:`${C.red}1a`, border:`1px solid ${C.red}55`, borderRadius:8, padding:"3px 10px", fontSize:13, color:C.red, fontWeight:700 }}>
+              <Ico name="tomato" size={13} /> {movie.rt}%<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>RT</span>
             </span>
           </div>
 
@@ -636,7 +677,7 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
                   alignItems: "center",
                   gap: 4,
                 }}>
-                  <span style={{ fontSize: 9 }}>✨</span>
+                  <Ico name="sparkle" size={11} />
                   {m.label}
                 </span>
               ))}
@@ -652,7 +693,7 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
 
           {movie.awards && (
             <div style={{ fontSize:11, color:C.gold, marginBottom:10, display:"flex", alignItems:"flex-start", gap:6 }}>
-              <span>🏆</span>
+              <Ico name="trophy" size={14} style={{ marginTop:1 }} />
               <span>{movie.awards}</span>
             </div>
           )}
@@ -1054,7 +1095,7 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
             transition:"all 0.15s",
           }}
         >
-          <div style={{ width:38, height:38, borderRadius:"50%", background:C.accentSoft, color:C.accent, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:18, flexShrink:0 }}>👤</div>
+          <div style={{ width:38, height:38, borderRadius:"50%", background:C.accentSoft, color:C.accent, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:18, flexShrink:0 }}><Ico name="user" size={20} /></div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:14, fontWeight:800, color:C.text }}>Log in with username</div>
             <div style={{ fontSize:11, color:C.muted, marginTop:2, lineHeight:1.4 }}>
@@ -1126,7 +1167,7 @@ function MovieNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
   return (
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:24, alignItems:"center" }}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ fontSize:56, marginBottom:8, lineHeight:1 }}>🎬</div>
+        <div style={{ marginBottom:10, lineHeight:1 }}><Ico name="film" size={50} color={C.accent} stroke={1.5} /></div>
         <h2 style={{ margin:0, fontSize:24, fontWeight:600, color:C.text, fontFamily:SERIF, letterSpacing:-0.5 }}>NetPix</h2>
         <p style={{ color:C.muted, fontSize:13, margin:"6px 0 0", maxWidth:280, lineHeight:1.5 }}>
           Swipe through movies with friends and pick what to watch together.
@@ -1142,7 +1183,7 @@ function MovieNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
           — or join one —
         </div>
         <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={onScanQR} outline flex>📷 Scan QR Code</Btn>
+          <Btn onClick={onScanQR} outline flex><Ico name="camera" size={15} style={{ marginRight:6, verticalAlign:-2 }} />Scan QR Code</Btn>
           <Btn onClick={onJoinSession} outline flex>Enter Code</Btn>
         </div>
       </div>
@@ -1194,7 +1235,7 @@ function SignInScreen({ onSignedIn, onCancel }) {
   return (
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:20 }}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ fontSize:44, marginBottom:8 }}>💾</div>
+        <div style={{ marginBottom:10 }}><Ico name="save" size={40} color={C.accent} stroke={1.5} /></div>
         <h2 style={{ margin:"0 0 6px", fontSize:22 }}>Save your picks</h2>
         <p style={{ color:C.muted, fontSize:13, margin:0, lineHeight:1.5 }}>
           Optional — enter your email to remember which movies you've watched and your
@@ -1472,8 +1513,8 @@ function ProfileScreen({ profile, setProfile, onSignOut, onHome }) {
                 <button
                   onClick={() => { setNameDraft(profile.displayName || ""); setEditingName(true); }}
                   title="Edit display name"
-                  style={{ background:"transparent", border:"none", color:C.muted, fontSize:12, cursor:"pointer", padding:"2px 4px" }}
-                >✎</button>
+                  style={{ background:"transparent", border:"none", color:C.muted, cursor:"pointer", padding:"2px 4px", display:"inline-flex", alignItems:"center" }}
+                ><Ico name="pencil" size={14} /></button>
               </div>
               <div style={{ fontSize:12, color:C.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{profile.email}</div>
               <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>{sessions.length} session{sessions.length === 1 ? "" : "s"} saved</div>
@@ -1675,7 +1716,7 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
         {/* Big primary share button — opens the OS share sheet so the admin can
             text/iMessage/WhatsApp the link in one tap. Falls back to copy if
             navigator.share isn't supported (mainly older desktop browsers). */}
-        <Btn onClick={shareUrl} big>📤 Share invite link</Btn>
+        <Btn onClick={shareUrl} big><Ico name="share" size={16} style={{ marginRight:7, verticalAlign:-3 }} />Share invite link</Btn>
         <div style={{ display:"flex", gap:8 }}>
           <input value={sessionUrl} readOnly style={{ ...inputStyle, flex:1, fontSize:12, color:C.muted }} />
           <Btn onClick={copyUrl} outline>{copied ? "✓ Copied" : "Copy"}</Btn>
@@ -2110,7 +2151,7 @@ function JoinScreen({ session, userId, userName, setUserName, onJoined, onSessio
   return (
     <div style={{ paddingTop:40, display:"flex", flexDirection:"column", gap:20 }}>
       <div style={{ textAlign:"center", marginBottom:8 }}>
-        <div style={{ fontSize:40 }}>🔗</div>
+        <div style={{ marginBottom:6 }}><Ico name="link" size={38} color={C.accent} stroke={1.5} /></div>
         <p style={{ color:C.muted, margin:"8px 0 0" }}>Enter the session code from the host's screen</p>
       </div>
       <Field label="Your Name" required>
@@ -2176,7 +2217,7 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
   if (needsStreamingFilter && !tmdbLoaded) {
     return (
       <div style={{ paddingTop:60, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:16, color:C.muted }}>
-        <div style={{ fontSize:40 }}>🎬</div>
+        <div style={{ marginBottom:6 }}><Ico name="film" size={38} color={C.accent} stroke={1.5} /></div>
         <div style={{ fontSize:16, fontWeight:600, color:C.text }}>Finding movies on your services…</div>
         <div style={{ fontSize:13 }}>Checking streaming availability</div>
         <div style={{ width:200, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
@@ -2189,7 +2230,7 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
   if (!movies.length) {
     return (
       <div style={{ paddingTop:60, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-        <div style={{ fontSize:40 }}>😕</div>
+        <div style={{ marginBottom:6 }}><Ico name="frown" size={38} color={C.muted} stroke={1.5} /></div>
         <div style={{ fontSize:16, fontWeight:600, color:C.text }}>No movies found on your services</div>
         <p style={{ color:C.muted, fontSize:13, maxWidth:300 }}>
           None of the {criteria.subscriptionOnly ? "subscription" : "streaming or rental"} options matched your selected services. Try adding more services or turning off the subscription-only filter.
@@ -2551,7 +2592,7 @@ function PosterThumb({ poster, title }) {
     <div style={{ width:90, flexShrink:0, height:130, background:`linear-gradient(135deg, ${C.accentSoft}, ${C.bg})`, overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", color: C.muted }}>
       {poster && !err
         ? <img src={poster} alt={title} onError={() => setErr(true)} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
-        : <span style={{ fontSize:36 }}>🎬</span>}
+        : <Ico name="film" size={40} color={C.muted} stroke={1.4} />}
     </div>
   );
 }
@@ -2745,7 +2786,7 @@ function SavedMoviesScreen({ profile, setProfile, session, onContinue, onSkip })
   return (
     <div style={{ paddingTop:8, display:"flex", flexDirection:"column", gap:14 }}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ fontSize:44 }}>📌</div>
+        <div style={{ marginBottom:4 }}><Ico name="bookmark" size={38} color={C.accent} stroke={1.5} /></div>
         <h2 style={{ margin:"8px 0 4px" }}>Saved for Later</h2>
         <p style={{ color:C.muted, margin:0, fontSize:13 }}>Include these in tonight's swipe deck?</p>
       </div>
@@ -2769,8 +2810,8 @@ function SavedMoviesScreen({ profile, setProfile, session, onContinue, onSkip })
                 <div style={{ fontWeight:800, fontSize:15, color:C.text }}>{movie.title}</div>
                 <div style={{ color:C.muted, fontSize:12, marginTop:2 }}>{movie.year}</div>
                 <div style={{ fontSize:12, marginTop:4, display:"flex", gap:8 }}>
-                  <span style={{ color:C.gold }}>⭐ {movie.imdb}</span>
-                  <span style={{ color:"#fa4b3a" }}>🍅 {movie.rt}%</span>
+                  <span style={{ color:C.gold, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="star" size={12} filled /> {movie.imdb}</span>
+                  <span style={{ color:C.red, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="tomato" size={12} /> {movie.rt}%</span>
                 </div>
               </div>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:8 }}>
@@ -2990,7 +3031,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     return (
       <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:16 }}>
         <div style={{ textAlign:"center", padding:24 }}>
-          <div style={{ fontSize:50 }}>🎲</div>
+          <div style={{ marginBottom:4 }}><Ico name="refresh" size={44} color={C.muted} stroke={1.5} /></div>
           <h2>No matches yet!</h2>
           <p style={{ color:C.muted }}>{isTwo ? "You two didn't agree on anything — let's try a new set of movies!" : "No movies got enough votes."}</p>
           <Btn onClick={doNewRound} big>Try 10 New Movies →</Btn>
@@ -3028,7 +3069,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     return (
       <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:16 }}>
         <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:44 }}>💝</div>
+          <div style={{ marginBottom:4 }}><Ico name="heart" size={40} color={C.accent} filled /></div>
           <h2 style={{ margin:"8px 0 4px" }}>
             {heartRound > 1 ? `Still ${currentPool.length} options — round ${heartRound}!` : `You all said yes to ${currentPool.length} movies!`}
           </h2>
@@ -3072,8 +3113,8 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
                     )}
                   </div>
                   <div style={{ display:"flex", gap:8, fontSize:12, marginBottom:8 }}>
-                    <span style={{ color:C.gold }}>⭐ {movie.imdb}</span>
-                    <span style={{ color:"#fa4b3a" }}>🍅 {movie.rt}%</span>
+                    <span style={{ color:C.gold, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="star" size={12} filled /> {movie.imdb}</span>
+                    <span style={{ color:C.red, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="tomato" size={12} /> {movie.rt}%</span>
                   </div>
                   {alreadyHearted && heartCount > 0 && (
                     <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:8 }}>
@@ -3206,7 +3247,9 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
             borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, cursor:"pointer",
           }}
         >
-          {saved ? "📌 Saved for later" : "📌 Save for later"}
+          {saved
+            ? <><Ico name="bookmark" size={12} filled style={{ marginRight:5, verticalAlign:-2 }} />Saved for later</>
+            : <><Ico name="bookmark" size={12} style={{ marginRight:5, verticalAlign:-2 }} />Save for later</>}
         </button>
       </div>
     );
@@ -3215,7 +3258,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   return (
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:16 }}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ fontSize:50 }}>🎉</div>
+        <div style={{ marginBottom:4 }}><Ico name="sparkle" size={44} color={C.gold} stroke={1.5} /></div>
         <h2 style={{ margin:"8px 0 4px" }}>Tonight's pick</h2>
         {heartRound > 1 && <p style={{ color:C.muted, margin:0, fontSize:13 }}>Survived {heartRound} heart round{heartRound > 1 ? "s" : ""}</p>}
       </div>
@@ -3234,8 +3277,8 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
               )}
             </div>
             <div style={{ display:"flex", gap:10, marginBottom:6, fontSize:12 }}>
-              <span style={{ color:C.gold }}>⭐ {movie.imdb}</span>
-              <span style={{ color:"#fa4b3a" }}>🍅 {movie.rt}%</span>
+              <span style={{ color:C.gold, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="star" size={12} filled /> {movie.imdb}</span>
+              <span style={{ color:C.red, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="tomato" size={12} /> {movie.rt}%</span>
               {heartRound > 1 && <span style={{ color:C.accent, fontWeight:700 }}>♥ {heartCounts[movie.id] ?? 0}</span>}
             </div>
             {participants.some(p => p.passionPick === movie.id) && (
@@ -3282,12 +3325,12 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
           <div style={{ fontSize:12, color:C.muted, fontWeight:700, letterSpacing:0.5, margin:"4px 0 8px" }}>RUNNERS-UP</div>
           {runnersUp.map(movie => (
             <div key={movie.id} style={{ display:"flex", alignItems:"flex-start", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8 }}>
-              <Thumb src={movie.poster} emoji="🎬" w={46} h={64} radius={6} fontSize={22} />
+              <Thumb src={movie.poster} icon="film" w={46} h={64} radius={6} fontSize={22} />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{movie.title} <span style={{ color:C.muted, fontWeight:400, fontSize:12 }}>{movie.year}</span></div>
                 <div style={{ fontSize:12, color:C.muted, display:"flex", gap:8, marginTop:2 }}>
-                  <span style={{ color:C.gold }}>⭐ {movie.imdb}</span>
-                  <span style={{ color:"#fa4b3a" }}>🍅 {movie.rt}%</span>
+                  <span style={{ color:C.gold, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="star" size={12} filled /> {movie.imdb}</span>
+                  <span style={{ color:C.red, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="tomato" size={12} /> {movie.rt}%</span>
                   {(heartCounts[movie.id] ?? 0) > 0 && <span style={{ color:C.accent, fontWeight:700 }}>♥ {heartCounts[movie.id]}</span>}
                 </div>
                 {/* Same watch/save controls as the winner, so a runner-up can be
@@ -3375,7 +3418,7 @@ function FoodNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
   return (
     <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:24, alignItems:"center" }}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ fontSize:56, marginBottom:8, lineHeight:1 }}>🍔</div>
+        <div style={{ marginBottom:10, lineHeight:1 }}><Ico name="food" size={50} color={C.green} stroke={1.5} /></div>
         <h2 style={{ margin:0, fontSize:24, fontWeight:600, color:C.text, fontFamily:SERIF, letterSpacing:-0.5 }}>FoodPix</h2>
         <p style={{ color:C.muted, fontSize:13, margin:"6px 0 0", maxWidth:280, lineHeight:1.5 }}>
           Swipe nearby restaurants with friends and pick where to order from together.
@@ -3387,7 +3430,7 @@ function FoodNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
           — or join one —
         </div>
         <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={onScanQR} outline flex>📷 Scan QR Code</Btn>
+          <Btn onClick={onScanQR} outline flex><Ico name="camera" size={15} style={{ marginRight:6, verticalAlign:-2 }} />Scan QR Code</Btn>
           <Btn onClick={onJoinSession} outline flex>Enter Code</Btn>
         </div>
       </div>
@@ -3542,7 +3585,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   return (
     <div style={{ paddingTop:16, display:"flex", flexDirection:"column", gap:18, paddingBottom:40 }}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ fontSize:40 }}>🍔</div>
+        <div style={{ marginBottom:6 }}><Ico name="food" size={38} color={C.green} stroke={1.5} /></div>
         <h2 style={{ margin:"6px 0 0", fontSize:22 }}>What are you craving?</h2>
       </div>
 
@@ -3590,7 +3633,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
               {[{v:0,l:"Any"},{v:3.5,l:"3.5+"},{v:4,l:"4.0+"},{v:4.5,l:"4.5+"}].map(opt => (
                 <button key={opt.v} onClick={() => setMinRating(opt.v)}
                   style={{ flex:1, padding:"10px 8px", borderRadius:10, border:`1.5px solid ${minRating === opt.v ? C.accent : C.border}`, background:minRating === opt.v ? C.accentSoft : "transparent", color:minRating === opt.v ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
-                  {opt.l === "Any" ? "Any" : `⭐ ${opt.l}`}
+                  {opt.l === "Any" ? "Any" : <span style={{ display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="star" size={12} filled /> {opt.l}</span>}
                 </button>
               ))}
             </div>
@@ -3663,7 +3706,7 @@ function RestaurantCard({ r, index, total, hideCount }) {
             <img src={r.photo} alt={r.name} onError={() => setImgError(true)}
               style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
           ) : (
-            <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:90 }}>🍽️</div>
+            <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}><Ico name="plate" size={72} color={C.muted} stroke={1.3} /></div>
           )}
           <div style={{ position:"absolute", bottom:0, left:0, right:0, height:70, background:"linear-gradient(transparent, rgba(0,0,0,0.7))" }} />
           {r.openNow != null && (
@@ -3672,7 +3715,7 @@ function RestaurantCard({ r, index, total, hideCount }) {
             </div>
           )}
           <div style={{ position:"absolute", bottom:12, left:12, background:"rgba(0,0,0,0.7)", borderRadius:6, padding:"3px 8px", fontSize:11, color:"#fff", fontWeight:700, backdropFilter:"blur(4px)" }}>
-            📍 {r.distanceMi} mi
+            <Ico name="pin" size={12} style={{ marginRight:3, verticalAlign:-2 }} />{r.distanceMi} mi
           </div>
         </div>
 
@@ -3687,7 +3730,7 @@ function RestaurantCard({ r, index, total, hideCount }) {
           {r.rating != null && (
             <div style={{ display:"flex", gap:8, marginBottom:12 }}>
               <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:`${C.gold}1a`, border:`1px solid ${C.gold}55`, borderRadius:8, padding:"3px 10px", fontSize:13, color:C.gold, fontWeight:700 }}>
-                ⭐ {r.rating}<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>Google · {r.reviews}</span>
+                <Ico name="star" size={13} filled /> {r.rating}<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>Google · {r.reviews}</span>
               </span>
             </div>
           )}
@@ -3695,8 +3738,8 @@ function RestaurantCard({ r, index, total, hideCount }) {
           <div style={{ fontSize:13, color:C.muted, marginBottom:12 }}>{r.address}</div>
 
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-            {r.delivery && <span style={{ background:C.greenSoft, color:C.green, border:`1px solid ${C.green}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>🛵 Delivery</span>}
-            {r.takeout && <span style={{ background:C.accentSoft, color:C.accent, border:`1px solid ${C.accent}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>🥡 Takeout</span>}
+            {r.delivery && <span style={{ background:C.greenSoft, color:C.green, border:`1px solid ${C.green}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}><Ico name="scooter" size={12} style={{ marginRight:4, verticalAlign:-2 }} />Delivery</span>}
+            {r.takeout && <span style={{ background:C.accentSoft, color:C.accent, border:`1px solid ${C.accent}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}><Ico name="takeout" size={12} style={{ marginRight:4, verticalAlign:-2 }} />Takeout</span>}
           </div>
 
           {r.description && (
@@ -3768,7 +3811,7 @@ function FoodSwipingScreen({ session, userId, onDone }) {
         <button onClick={undo} disabled={!history.length}
           style={{ padding:"10px 18px", borderRadius:24, border:"none", background:history.length ? C.gold : C.border, color:history.length ? "#1a1300" : C.muted, fontSize:13, fontWeight:800, cursor:history.length ? "pointer" : "default" }}>UNDO</button>
         <button onClick={() => vote("yes")} aria-label="Want it"
-          style={{ width:64, height:64, borderRadius:"50%", border:`2px solid ${C.green}`, background:C.greenSoft, color:C.green, fontSize:26, cursor:"pointer" }}>❤</button>
+          style={{ width:64, height:64, borderRadius:"50%", border:`2px solid ${C.green}`, background:C.greenSoft, color:C.green, cursor:"pointer", display:"inline-flex", alignItems:"center", justifyContent:"center" }}><Ico name="heart" size={26} filled /></button>
       </div>
     </div>
   );
@@ -3861,7 +3904,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   if (!agreed.length) {
     return (
       <div style={{ paddingTop:40, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-        <div style={{ fontSize:50 }}>😕</div>
+        <div style={{ marginBottom:4 }}><Ico name="frown" size={44} color={C.muted} stroke={1.5} /></div>
         <h2 style={{ margin:0 }}>No matches</h2>
         <p style={{ color:C.muted, maxWidth:300 }}>Nobody agreed on a spot. Try another round with different criteria.</p>
         <div style={{ display:"flex", gap:10, width:"100%", maxWidth:320 }}>
@@ -3900,7 +3943,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     return (
       <div style={{ paddingTop:24, display:"flex", flexDirection:"column", gap:14, paddingBottom:40 }}>
         <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:44 }}>💝</div>
+          <div style={{ marginBottom:4 }}><Ico name="heart" size={40} color={C.accent} filled /></div>
           <h2 style={{ margin:"8px 0 4px" }}>
             {heartRound > 1 ? `Still ${currentPool.length} spots — round ${heartRound}!` : `You agreed on ${currentPool.length} spots!`}
           </h2>
@@ -3923,10 +3966,10 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
               border: isHearted ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
               boxShadow: isHearted ? `0 0 16px ${C.accent}33` : "none",
             }}>
-              <Thumb src={r.photo} emoji="🍽️" w={60} h={60} radius={10} fontSize={26} />
+              <Thumb src={r.photo} icon="plate" w={60} h={60} radius={10} fontSize={26} />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:800, fontSize:15, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.name}</div>
-                <div style={{ fontSize:12, color:C.muted }}>⭐ {r.rating} · {r.distanceMi} mi{PRICE_LABEL[r.priceLevel] ? ` · ${PRICE_LABEL[r.priceLevel]}` : ""}</div>
+                <div style={{ fontSize:12, color:C.muted }}><Ico name="star" size={11} filled color={C.gold} style={{ marginRight:3 }} />{r.rating} · {r.distanceMi} mi{PRICE_LABEL[r.priceLevel] ? ` · ${PRICE_LABEL[r.priceLevel]}` : ""}</div>
                 {alreadyHearted && heartCount > 0 && (
                   <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:6 }}>
                     {participants.filter(p => p.heart === r.id).map(p => (
@@ -3957,7 +4000,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   return (
     <div style={{ paddingTop:16, display:"flex", flexDirection:"column", gap:16, paddingBottom:40 }}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ fontSize:44 }}>🎉</div>
+        <div style={{ marginBottom:4 }}><Ico name="sparkle" size={40} color={C.gold} stroke={1.5} /></div>
         <h2 style={{ margin:"6px 0 0" }}>Tonight's pick</h2>
         {heartRound > 1 && <p style={{ color:C.muted, margin:"4px 0 0", fontSize:13 }}>Survived {heartRound} heart round{heartRound > 1 ? "s" : ""}</p>}
       </div>
@@ -3972,10 +4015,10 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
             return (
               <a key={r.id} href={r.mapsUri || "#"} target="_blank" rel="noopener noreferrer"
                 style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8, textDecoration:"none" }}>
-                <Thumb src={r.photo} emoji="🍽️" w={54} h={54} radius={8} fontSize={24} />
+                <Thumb src={r.photo} icon="plate" w={54} h={54} radius={8} fontSize={24} />
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{r.name}</div>
-                  <div style={{ fontSize:12, color:C.muted }}>⭐ {r.rating} · {r.distanceMi} mi{hearts ? ` · ♥ ${hearts}` : ""}</div>
+                  <div style={{ fontSize:12, color:C.muted }}><Ico name="star" size={11} filled color={C.gold} style={{ marginRight:3 }} />{r.rating} · {r.distanceMi} mi{hearts ? ` · ♥ ${hearts}` : ""}</div>
                 </div>
               </a>
             );
@@ -4024,13 +4067,13 @@ function Chip({ children, active, onClick, disabled, accentColor }) {
 
 // Small fixed-size thumbnail that falls back to an emoji if the image is missing
 // or fails to load (poster/photo URLs occasionally 404). Used in results rows.
-function Thumb({ src, emoji, w, h, radius = 8, fontSize = 24 }) {
+function Thumb({ src, icon = "film", w, h, radius = 8, fontSize = 24 }) {
   const [err, setErr] = useState(false);
   return (
     <div style={{ width:w, height:h, borderRadius:radius, overflow:"hidden", flexShrink:0, background:C.accentSoft, display:"flex", alignItems:"center", justifyContent:"center" }}>
       {src && !err
         ? <img src={src} alt="" onError={() => setErr(true)} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-        : <span style={{ fontSize }}>{emoji}</span>}
+        : <Ico name={icon} size={Math.round(fontSize * 0.9)} color={C.muted} stroke={1.4} />}
     </div>
   );
 }
