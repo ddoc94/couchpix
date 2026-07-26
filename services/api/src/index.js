@@ -308,9 +308,11 @@ export default {
     // cached 6h by (zip,cuisine,radius) so most sessions cost $0), merge+dedupe, then
     // filter by veto / rating / order-type / open-at-time server-side per request.
     //   GET /restaurants?zip=98103&cuisines=pizza,sushi&vetoCuisines=indian
-    //                   &radius=8000&minRating=4&mode=delivery|takeout&day=2&minute=1170
-    // day (0=Sun..6=Sat) + minute (0..1439) are the intended ORDER time in the
+    //                   &radius=8000&minRating=4&mode=delivery|takeout|dine_in&day=2&minute=1170
+    // day (0=Sun..6=Sat) + minute (0..1439) are the intended ORDER/DINING time in the
     // user's local timezone (the browser sends them; the group is local to the ZIP).
+    // mode=dine_in filters by dineIn and accepts optional narrowing flags:
+    //   &reservable=1 &outdoorSeating=1 &alcohol=1 &goodForKids=1
     if (url.pathname === "/restaurants") {
       const key = env.GOOGLE_PLACES_KEY;
       if (!key) return json({ error: "GOOGLE_PLACES_KEY not configured" }, 500);
@@ -328,7 +330,13 @@ export default {
       };
       const radius = Math.min(Math.max(parseInt(url.searchParams.get("radius")) || 8000, 500), 50000);
       const minRating = parseFloat(url.searchParams.get("minRating")) || 0;
-      const mode = url.searchParams.get("mode") === "delivery" ? "delivery" : "takeout";
+      const modeParam = url.searchParams.get("mode");
+      const mode = modeParam === "delivery" ? "delivery" : modeParam === "dine_in" ? "dine_in" : "takeout";
+      // Optional dine-in narrowing filters (only meaningful when mode === "dine_in").
+      const wantReservable = url.searchParams.get("reservable") === "1";
+      const wantOutdoor = url.searchParams.get("outdoorSeating") === "1";
+      const wantAlcohol = url.searchParams.get("alcohol") === "1";
+      const wantKids = url.searchParams.get("goodForKids") === "1";
       const day = url.searchParams.has("day") ? parseInt(url.searchParams.get("day")) : null;
       const minute = url.searchParams.has("minute") ? parseInt(url.searchParams.get("minute")) : null;
       const BUFFER = 45; // minutes the place must stay open past the order time
@@ -352,12 +360,16 @@ export default {
         "places.rating", "places.userRatingCount", "places.priceLevel",
         "places.primaryTypeDisplayName", "places.googleMapsUri", "places.photos",
         "places.currentOpeningHours", "places.regularOpeningHours",
-        "places.editorialSummary", "places.takeout", "places.delivery",
+        "places.editorialSummary", "places.takeout", "places.delivery", "places.dineIn",
+        "places.reservable", "places.outdoorSeating", "places.goodForChildren",
+        "places.servesBeer", "places.servesWine", "places.servesCocktails",
       ].join(",");
       const byId = new Map();
       const matchedBy = new Map(); // place id -> Set of picked cuisines that surfaced it
       for (const cuisine of cuisineList) {
-        const cacheKey = `food:${zip}:${cuisine.toLowerCase()}:${radius}`;
+        // v2 cache: field mask now includes dineIn + atmosphere fields, so old
+        // `food:` rows would be missing them — bump the prefix to re-fetch.
+        const cacheKey = `food2:${zip}:${cuisine.toLowerCase()}:${radius}`;
         let pl = await env.SESSIONS.get(cacheKey, "json");
         if (!pl) {
           const pr = await fetch("https://places.googleapis.com/v1/places:searchText", {
@@ -411,9 +423,28 @@ export default {
         return false;
       };
 
+      // Alcohol = beer OR wine OR cocktails. true if any known-true; false only if
+      // all three are known-false; null when Google has no data on any of them.
+      const servesAlcohol = (p) => {
+        const v = [p.servesBeer, p.servesWine, p.servesCocktails];
+        if (v.some(x => x === true)) return true;
+        if (v.every(x => x === false)) return false;
+        return null;
+      };
+
       const filtered = places.filter(p => {
-        if (p.takeout !== true) return false;                 // all options must offer takeout
-        if (mode === "delivery" && p.delivery !== true) return false;
+        if (mode === "dine_in") {
+          if (p.dineIn !== true) return false;                // must offer dine-in
+          // Optional narrowing: only exclude a place when Google explicitly says it
+          // LACKS the attribute — keep unknowns so the deck doesn't collapse.
+          if (wantReservable && p.reservable === false) return false;
+          if (wantOutdoor && p.outdoorSeating === false) return false;
+          if (wantKids && p.goodForChildren === false) return false;
+          if (wantAlcohol && servesAlcohol(p) === false) return false;
+        } else {
+          if (p.takeout !== true) return false;               // takeout/delivery must offer takeout
+          if (mode === "delivery" && p.delivery !== true) return false;
+        }
         if (minRating && (p.rating ?? 0) < minRating) return false;
         if (vetoMatch(p)) return false;
         // Price filter — only when narrowed. Keep places with unknown price (~20%).
@@ -462,6 +493,11 @@ export default {
         openNow: p.currentOpeningHours?.openNow ?? null,
         takeout: p.takeout ?? null,
         delivery: p.delivery ?? null,
+        dineIn: p.dineIn ?? null,
+        reservable: p.reservable ?? null,
+        outdoorSeating: p.outdoorSeating ?? null,
+        servesAlcohol: servesAlcohol(p),
+        goodForChildren: p.goodForChildren ?? null,
         mapsUri: p.googleMapsUri || null,
         photo: await resolvePhoto(p.photos?.[0]?.name),
       })));
