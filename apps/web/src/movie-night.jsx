@@ -45,8 +45,8 @@ const SERIF = "'New York', 'Iowan Old Style', ui-serif, Georgia, serif";
 // and stroke. Monochrome text glyphs that already read cleanly (♥ ✓ ✕ ★) are
 // kept as-is. `filled` fills the shape (used for the rating star / active heart).
 const ICON_PATHS = {
-  film: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7.5 5v14M12 5v14M16.5 5v14" /></>,
-  food: <path d="M6 3v7a2 2 0 0 0 4 0V3M8 10v11M18 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" />,
+  film: <><path d="M3 10.5h18V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10.5Z" /><path d="M3 10.5 4.3 5.8 21 8.1 21 10.5Z" /><path d="M8 6.3 6.7 10.5M12.8 6.9 11.5 10.5M17.6 7.6 16.3 10.5" /></>,
+  food: <><path d="M6 3.5V8M8 3.5V8M10 3.5V8M6 8a2 2 0 0 0 2 2 2 2 0 0 0 2-2M8 10v10.5" /><path d="M16.8 3.5V20.5M16.8 3.5c-2.2 .6-3 3.2-3 5.6 0 1.7 1.1 2.5 3 2.6" /></>,
   plate: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.4" /></>,
   camera: <><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13" r="3.2" /></>,
   bookmark: <path d="M6 3.5h12v17l-6-4-6 4Z" />,
@@ -4084,8 +4084,8 @@ function Thumb({ src, icon = "film", w, h, radius = 8, fontSize = 24 }) {
 // Simple stroked line icons for the activity tiles — a consistent set that
 // replaces the old emoji (🎬 🍔 💬). Inherit color + size from the parent chip.
 const TILE_ICONS = {
-  movie: <path d="M3 5.5h18v13H3zM3 10h18M7.5 5.5v4.5M12.5 5.5v4.5M17.5 5.5v4.5M7.5 18.5V14M12.5 18.5V14M17.5 18.5V14" />,
-  food: <path d="M6 3v7a2 2 0 0 0 4 0V3M8 10v11M18 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4v9" />,
+  movie: <><path d="M3 10.5h18V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10.5Z" /><path d="M3 10.5 4.3 5.8 21 8.1 21 10.5Z" /><path d="M8 6.3 6.7 10.5M12.8 6.9 11.5 10.5M17.6 7.6 16.3 10.5" /></>,
+  food: <><path d="M6 3.5V8M8 3.5V8M10 3.5V8M6 8a2 2 0 0 0 2 2 2 2 0 0 0 2-2M8 10v10.5" /><path d="M16.8 3.5V20.5M16.8 3.5c-2.2 .6-3 3.2-3 5.6 0 1.7 1.1 2.5 3 2.6" /></>,
   chat: <path d="M4 5.5h16v10H9l-4 3.5v-3.5H4zM8 9.5h8M8 12.5h5" />,
 };
 
