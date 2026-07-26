@@ -68,6 +68,7 @@ const ICON_PATHS = {
   pencil: <path d="M4 20h4L18.5 9.5l-4-4L4 16v4ZM13 5.5l4 4" />,
   arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
   arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
+  hourglass: <path d="M6 3h12M6 21h12M8 3v4l4 5 4-5V3M8 21v-4l4-5 4 5v4" />,
 };
 
 function Ico({ name, size = 18, color = "currentColor", stroke = 1.6, filled = false, style }) {
@@ -1897,7 +1898,7 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
   if (iAmDone) {
     return (
       <div style={{ paddingTop: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-        <div style={{ fontSize: 44 }}>⏳</div>
+        <div style={{ marginBottom:4 }}><Ico name="hourglass" size={40} color={C.muted} stroke={1.5} /></div>
         <h2 style={{ margin: 0 }}>Waiting for everyone…</h2>
         <div style={{ width: "100%", background: C.card, borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
           {latestSession.participants?.map(p => (
@@ -2989,7 +2990,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     const notDone = participants.filter(p => !p.done);
     return (
       <div style={{ paddingTop:40, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-        <div style={{ fontSize:50 }}>⏳</div>
+        <div style={{ marginBottom:4 }}><Ico name="hourglass" size={44} color={C.muted} stroke={1.5} /></div>
         <h2 style={{ margin:0 }}>Waiting for everyone…</h2>
         <p style={{ color:C.muted }}>Still swiping:</p>
         {notDone.map(p => <div key={p.id} style={{ background:C.card, borderRadius:8, padding:"8px 20px", color:C.muted }}>{p.name}</div>)}
@@ -3403,6 +3404,13 @@ async function discoverRestaurants(session) {
   if (c.minRating) params.set("minRating", String(c.minRating));
   // Only constrain price when the admin actually narrowed it (some tiers deselected).
   if (c.allowedPrices && c.allowedPrices.length < 4) params.set("prices", c.allowedPrices.join(","));
+  // Optional dine-in narrowing flags.
+  if (c.mode === "dine_in") {
+    if (c.reservable) params.set("reservable", "1");
+    if (c.outdoorSeating) params.set("outdoorSeating", "1");
+    if (c.servesAlcohol) params.set("alcohol", "1");
+    if (c.goodForKids) params.set("goodForKids", "1");
+  }
   try {
     const res = await fetch(`${TMDB_PROXY}/restaurants?${params}`);
     const data = await res.json();
@@ -3465,6 +3473,11 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   );
   const [when, setWhen] = useState("now");
   const [scheduledTime, setScheduledTime] = useState("19:00");
+  // Optional dine-in narrowing (only used when mode === "dine_in")
+  const [reservable, setReservable] = useState(!!session.criteria?.reservable);
+  const [outdoorSeating, setOutdoorSeating] = useState(!!session.criteria?.outdoorSeating);
+  const [servesAlcohol, setServesAlcohol] = useState(!!session.criteria?.servesAlcohol);
+  const [goodForKids, setGoodForKids] = useState(!!session.criteria?.goodForKids);
 
   const [submitted, setSubmitted] = useState(false);
   const submittedRef = useRef(false);
@@ -3536,7 +3549,9 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
     getSession(session.id).then(s => {
       if (!s) return;
       const criteria = isAdmin
-        ? { ...s.criteria, zip: zip.trim(), mode, minRating, distanceMi, allowedPrices, when: when === "now" ? "now" : scheduledTime }
+        ? { ...s.criteria, zip: zip.trim(), mode, minRating, distanceMi, allowedPrices,
+            when: when === "now" ? "now" : scheduledTime,
+            reservable, outdoorSeating, servesAlcohol, goodForKids }
         : s.criteria;
       const updated = {
         ...s,
@@ -3563,7 +3578,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   if (iAmDone) {
     return (
       <div style={{ paddingTop:40, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-        <div style={{ fontSize:44 }}>⏳</div>
+        <div style={{ marginBottom:4 }}><Ico name="hourglass" size={40} color={C.muted} stroke={1.5} /></div>
         <h2 style={{ margin:0 }}>Waiting for everyone…</h2>
         <div style={{ width:"100%", background:C.card, borderRadius:12, padding:16, border:`1px solid ${C.border}` }}>
           {latestSession.participants?.map(p => (
@@ -3614,19 +3629,36 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
               style={{ ...inputStyle, fontFamily:"monospace", fontSize:20, letterSpacing:4, textAlign:"center" }} />
           </Field>
 
-          <Field label="Order type">
+          <Field label="How do you want to eat?">
             <div style={{ display:"flex", gap:8 }}>
               {[
-                { value:"delivery", label:"Delivery + Takeout" },
-                { value:"takeout", label:"Takeout only" },
+                { value:"dine_in", label:"Dine-in", icon:"plate" },
+                { value:"delivery", label:"Delivery", icon:"scooter" },
+                { value:"takeout", label:"Takeout", icon:"takeout" },
               ].map(opt => (
                 <button key={opt.value} onClick={() => setMode(opt.value)}
-                  style={{ flex:1, padding:"10px 8px", borderRadius:10, border:`1.5px solid ${mode === opt.value ? C.accent : C.border}`, background:mode === opt.value ? C.accentSoft : "transparent", color:mode === opt.value ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
+                  style={{ flex:1, padding:"12px 8px", borderRadius:10, border:`1.5px solid ${mode === opt.value ? C.accent : C.border}`, background:mode === opt.value ? C.accentSoft : "transparent", color:mode === opt.value ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600, display:"flex", flexDirection:"column", alignItems:"center", gap:5 }}>
+                  <Ico name={opt.icon} size={20} />
                   {opt.label}
                 </button>
               ))}
             </div>
+            <div style={{ fontSize:11, color:C.muted, marginTop:6 }}>
+              {mode === "delivery" ? "Places that deliver (or offer takeout)." : mode === "takeout" ? "Places that offer takeout." : "Restaurants you can sit down and eat at."}
+            </div>
           </Field>
+
+          {mode === "dine_in" && (
+            <Field label="Dine-in preferences (optional)">
+              <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>Turn on to only show places that match.</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                <Chip active={reservable} onClick={() => setReservable(v => !v)}>Takes reservations</Chip>
+                <Chip active={outdoorSeating} onClick={() => setOutdoorSeating(v => !v)}>Outdoor seating</Chip>
+                <Chip active={servesAlcohol} onClick={() => setServesAlcohol(v => !v)}>Serves alcohol</Chip>
+                <Chip active={goodForKids} onClick={() => setGoodForKids(v => !v)}>Good for kids</Chip>
+              </div>
+            </Field>
+          )}
 
           <Field label="Minimum Google rating">
             <div style={{ display:"flex", gap:8 }}>
@@ -3663,9 +3695,9 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
             </div>
           </Field>
 
-          <Field label="When are you ordering?">
+          <Field label={mode === "dine_in" ? "When are you dining?" : "When are you ordering?"}>
             <div style={{ display:"flex", gap:8, marginBottom: when === "now" ? 0 : 10 }}>
-              {[{v:"now",l:"Order now"},{v:"later",l:"Schedule (today)"}].map(opt => (
+              {[{v:"now",l: mode === "dine_in" ? "Dining now" : "Order now"},{v:"later",l:"Schedule (today)"}].map(opt => (
                 <button key={opt.v} onClick={() => setWhen(opt.v === "now" ? "now" : "later")}
                   style={{ flex:1, padding:"10px 8px", borderRadius:10, border:`1.5px solid ${(when==="now") === (opt.v==="now") ? C.accent : C.border}`, background:(when==="now")===(opt.v==="now") ? C.accentSoft : "transparent", color:(when==="now")===(opt.v==="now") ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
                   {opt.l}
@@ -3677,7 +3709,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
                 style={{ ...inputStyle, fontSize:16 }} />
             )}
             <div style={{ fontSize:11, color:C.muted, marginTop:6 }}>
-              We only show places that'll still be open at least 45 minutes after your order time.
+              We only show places that'll still be open at least 45 minutes after your {mode === "dine_in" ? "dining" : "order"} time.
             </div>
           </Field>
         </>
@@ -3738,9 +3770,23 @@ function RestaurantCard({ r, index, total, hideCount }) {
           <div style={{ fontSize:13, color:C.muted, marginBottom:12 }}>{r.address}</div>
 
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+            {r.dineIn && <span style={{ background:C.accentSoft, color:C.accent, border:`1px solid ${C.accent}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}><Ico name="plate" size={12} style={{ marginRight:4, verticalAlign:-2 }} />Dine-in</span>}
             {r.delivery && <span style={{ background:C.greenSoft, color:C.green, border:`1px solid ${C.green}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}><Ico name="scooter" size={12} style={{ marginRight:4, verticalAlign:-2 }} />Delivery</span>}
             {r.takeout && <span style={{ background:C.accentSoft, color:C.accent, border:`1px solid ${C.accent}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}><Ico name="takeout" size={12} style={{ marginRight:4, verticalAlign:-2 }} />Takeout</span>}
           </div>
+
+          {[r.outdoorSeating, r.reservable, r.servesAlcohol, r.goodForChildren].some(Boolean) && (
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+              {[
+                r.outdoorSeating && "Outdoor seating",
+                r.reservable && "Takes reservations",
+                r.servesAlcohol && "Serves alcohol",
+                r.goodForChildren && "Good for kids",
+              ].filter(Boolean).map(label => (
+                <span key={label} style={{ background:C.bg, color:C.muted, border:`1px solid ${C.border}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>{label}</span>
+              ))}
+            </div>
+          )}
 
           {r.description && (
             <p style={{ margin:"0 0 12px", color:C.text, fontSize:13.5, lineHeight:1.6, opacity:0.85 }}>{r.description}</p>
@@ -3890,7 +3936,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     const notDone = participants.filter(p => !p.done);
     return (
       <div style={{ paddingTop:40, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
-        <div style={{ fontSize:50 }}>⏳</div>
+        <div style={{ marginBottom:4 }}><Ico name="hourglass" size={44} color={C.muted} stroke={1.5} /></div>
         <h2 style={{ margin:0 }}>Waiting for everyone…</h2>
         <p style={{ color:C.muted }}>Still swiping:</p>
         {notDone.map(p => <div key={p.id} style={{ background:C.card, borderRadius:8, padding:"8px 20px", color:C.muted }}>{p.name}</div>)}
