@@ -1124,20 +1124,9 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
         <ActivityTile
           icon="food"
           title="FoodPix"
-          description="Pick the right takeout for everyone"
+          description="Pick the right food for everyone"
           tint={C.green}
           onClick={onStartFood}
-        />
-
-        <div style={{ textAlign:"center", color:C.muted, fontSize:13, fontWeight:700, letterSpacing:0.5, marginTop:14, marginBottom:2 }}>
-          Games
-        </div>
-        <ActivityTile
-          icon="chat"
-          title="Bonding Questions"
-          description="Get to know each other like never before"
-          tint={C.gold}
-          onClick={onStartQuestions}
         />
       </div>
 
