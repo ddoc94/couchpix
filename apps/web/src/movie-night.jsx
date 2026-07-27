@@ -69,6 +69,8 @@ const ICON_PATHS = {
   arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
   arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
   hourglass: <path d="M6 3h12M6 21h12M8 3v4l4 5 4-5V3M8 21v-4l4-5 4 5v4" />,
+  menu: <path d="M6 3h9l3 3v15H6zM9 9h6M9 12.5h6M9 16h4" />,
+  external: <path d="M14 4h6v6M20 4l-8 8M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />,
 };
 
 function Ico({ name, size = 18, color = "currentColor", stroke = 1.6, filled = false, style }) {
@@ -3779,7 +3781,7 @@ function RestaurantCard({ r, index, total, hideCount }) {
           <h2 style={{ margin:"0 0 4px", fontSize:21, fontWeight:700, color:C.text, letterSpacing:-0.3, lineHeight:1.2 }}>{r.name}</h2>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:10 }}>
             <span style={{ color:C.muted, fontSize:13 }}>{r.cuisine}</span>
-            {price && <span style={{ color:C.muted, fontSize:13 }}>· {price}</span>}
+            {(r.priceRange || price) && <span style={{ color:C.muted, fontSize:13 }}>· {r.priceRange || price}</span>}
           </div>
 
           {r.rating != null && (
@@ -3821,11 +3823,19 @@ function RestaurantCard({ r, index, total, hideCount }) {
             <p style={{ margin:"0 0 12px", color:C.text, fontSize:13.5, lineHeight:1.6, opacity:0.85 }}>{r.description}</p>
           )}
 
-          {r.mapsUri && (
-            <a href={r.mapsUri} target="_blank" rel="noopener noreferrer"
-              style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px 0", borderRadius:10, border:`1.5px solid ${C.border}`, background:"transparent", color:C.text, fontSize:14, fontWeight:700, textDecoration:"none" }}>
-              View on Google →
-            </a>
+          {(r.website || r.mapsUri) && (
+            <div style={{ display:"flex", gap:8 }}>
+              <a href={r.website || r.mapsUri} target="_blank" rel="noopener noreferrer"
+                style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:7, padding:"10px 0", borderRadius:10, border:`1.5px solid ${C.accent}`, background:C.accentSoft, color:C.accent, fontSize:14, fontWeight:700, textDecoration:"none" }}>
+                <Ico name="menu" size={15} /> View menu <Ico name="external" size={12} style={{ opacity:0.7 }} />
+              </a>
+              {r.website && r.mapsUri && (
+                <a href={r.mapsUri} target="_blank" rel="noopener noreferrer"
+                  style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px 0", borderRadius:10, border:`1.5px solid ${C.border}`, background:"transparent", color:C.text, fontSize:14, fontWeight:700, textDecoration:"none" }}>
+                  View on Google →
+                </a>
+              )}
+            </div>
           )}
         </div>
       </div>
