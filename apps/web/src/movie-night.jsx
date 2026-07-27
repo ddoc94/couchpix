@@ -3617,31 +3617,8 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
         <h2 style={{ margin:"6px 0 0", fontSize:22 }}>What are you craving?</h2>
       </div>
 
-      <Field label={`Cuisines (pick up to ${maxCuisines})`} required>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-          {FOOD_CUISINES.map(c => (
-            <Chip key={c} active={cuisines.includes(c)} onClick={() => toggleCuisine(c)}>{c}</Chip>
-          ))}
-        </div>
-      </Field>
-
-      <Field label="Veto (1 cuisine)">
-        <div style={{ fontSize:12, color:C.muted, marginBottom:6 }}>A vetoed cuisine is excluded even if someone else picked it.</div>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-          {FOOD_CUISINES.map(c => (
-            <Chip key={c} active={vetoes.includes(c)} onClick={() => toggleVeto(c)} accentColor={C.red}>{c}</Chip>
-          ))}
-        </div>
-      </Field>
-
       {isAdmin && (
         <>
-          <Field label="Delivery ZIP code" required>
-            <input value={zip} onChange={e => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
-              placeholder="e.g. 98103" inputMode="numeric"
-              style={{ ...inputStyle, fontFamily:"monospace", fontSize:20, letterSpacing:4, textAlign:"center" }} />
-          </Field>
-
           <Field label="How do you want to eat?">
             <div style={{ display:"flex", gap:8 }}>
               {[
@@ -3678,6 +3655,33 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
               </div>
             </Field>
           )}
+        </>
+      )}
+
+      <Field label={`Cuisines (pick up to ${maxCuisines})`} required>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+          {FOOD_CUISINES.map(c => (
+            <Chip key={c} active={cuisines.includes(c)} onClick={() => toggleCuisine(c)}>{c}</Chip>
+          ))}
+        </div>
+      </Field>
+
+      <Field label="Veto (1 cuisine)">
+        <div style={{ fontSize:12, color:C.muted, marginBottom:6 }}>A vetoed cuisine is excluded even if someone else picked it.</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+          {FOOD_CUISINES.map(c => (
+            <Chip key={c} active={vetoes.includes(c)} onClick={() => toggleVeto(c)} accentColor={C.red}>{c}</Chip>
+          ))}
+        </div>
+      </Field>
+
+      {isAdmin && (
+        <>
+          <Field label="Near Zip Code" required>
+            <input value={zip} onChange={e => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+              placeholder="e.g. 98103" inputMode="numeric"
+              style={{ ...inputStyle, fontFamily:"monospace", fontSize:20, letterSpacing:4, textAlign:"center" }} />
+          </Field>
 
           <Field label="Minimum Google rating">
             <div style={{ display:"flex", gap:8 }}>
