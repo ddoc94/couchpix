@@ -39,9 +39,9 @@ function json(data, status = 200) {
 //     "Big Hero 6" (collection: "Big Hero 6 Collection", number is intrinsic) and
 //     accepts "Saw 6" (collection: "Saw Collection", number is the sequel index).
 //
-// Missed cases (acceptable for slight bias): "Avengers: Endgame", "Empire Strikes
-// Back", "Aliens" — these don't carry a sequel marker. Slight bias doesn't need
-// to catch every sequel, just demote the obvious ones.
+// Cases without a numeric/part marker ("Avengers: Endgame", "Empire Strikes Back",
+// "Aliens") aren't flagged here, but they still belong to a TMDB collection, so the
+// caller gives them the softer "franchise" penalty rather than the hard sequel tier.
 function isLikelySequel(title, collection) {
   if (!collection?.name || !title) return false;
 
@@ -59,8 +59,10 @@ function isLikelySequel(title, collection) {
   // "Big Hero 6" → "Big Hero" → does NOT match series "Big Hero 6" → not flagged.
   const trailing = title.match(/\s\d{1,2}\s*$/);
   if (trailing) {
-    const titleWithoutNum = title.replace(/\s\d{1,2}\s*$/, '').trim().toLowerCase();
-    const series = collection.name.replace(/\s*Collection\s*$/i, '').trim().toLowerCase();
+    // Normalize a leading article so "Incredibles 2" matches "The Incredibles Collection".
+    const norm = s => s.replace(/^the\s+/i, '').trim();
+    const titleWithoutNum = norm(title.replace(/\s\d{1,2}\s*$/, '').trim().toLowerCase());
+    const series = norm(collection.name.replace(/\s*Collection\s*$/i, '').trim().toLowerCase());
     return titleWithoutNum === series;
   }
   return false;
@@ -147,29 +149,34 @@ export default {
       const vetoIds = vetoNames.map(g => GENRE_MAP[g]).filter(Boolean).join(",");
       const langQuery = languages.join("|");
 
-      // 25% of sessions use popularity sort (surfaces trending/recent films instead of
-      // all-time classics). The remaining 75% use rating sort across a wide page range
-      // so the ~400-movie accessible pool rotates rather than the same top-100 repeating.
-      const usePopularity = Math.random() < 0.25;
+      // Sort mix: ~45% of sessions sort by popularity (surfaces well-known / trending /
+      // recent films — "stuff a group has actually heard of"); the rest sort by rating
+      // across a wide page range so the accessible pool rotates instead of repeating the
+      // same top-100. Popularity uses a shallow page range (the genuinely popular films);
+      // rating goes deeper.
+      const usePopularity = Math.random() < 0.45;
       const sortBy = usePopularity ? "popularity.desc" : "vote_average.desc";
-      const maxPage = usePopularity ? 8 : 20;
+      const maxPage = usePopularity ? 8 : 18;
 
-      // Pick 2 different random pages and fetch them in parallel — doubles the candidate
-      // pool before filtering, keeping us well within the 50 subrequest free-plan limit
-      // (2 discover + up to 40 enrichment = 42 worst case).
       const page1 = Math.floor(Math.random() * maxPage) + 1;
       let page2;
       do { page2 = Math.floor(Math.random() * maxPage) + 1; } while (page2 === page1);
 
-      async function fetchPage(page, withDuration) {
-        let q = `${TMDB_BASE}/discover/movie?api_key=${TMDB_KEY}&sort_by=${sortBy}&vote_count.gte=200&vote_average.gte=6.0&language=en-US&page=${page}`;
+      // voteCount is the "how well-known" floor — the biggest lever against the obscure
+      // indie long tail. A high floor (~1000 votes) keeps the pool to movies a group would
+      // recognize; we relax it only if the strict filters leave too few candidates.
+      async function fetchPage(page, withDuration, voteCount) {
+        let q = `${TMDB_BASE}/discover/movie?api_key=${TMDB_KEY}&sort_by=${sortBy}&vote_count.gte=${voteCount}&vote_average.gte=6.0&language=en-US&page=${page}`;
         if (genreIds) q += `&with_genres=${genreIds}`;
         if (vetoIds) q += `&without_genres=${vetoIds}`;
         q += `&with_original_language=${langQuery}`;
         q += `&primary_release_date.gte=${yearFrom}-01-01`;
         q += `&primary_release_date.lte=${yearTo}-12-31`;
+        // Honor an explicit short/long preference; otherwise floor at 70 min so short
+        // films and featurettes (not the "movie night" goal) are excluded.
         if (withDuration && duration === "short") q += "&with_runtime.lte=120&with_runtime.gte=60";
-        if (withDuration && duration === "long") q += "&with_runtime.gte=121";
+        else if (withDuration && duration === "long") q += "&with_runtime.gte=121";
+        else q += "&with_runtime.gte=70";
         if (allowedRatings.length) {
           const CERT_ORDER = ["G", "PG", "PG-13", "R"];
           const min = CERT_ORDER.find(r => allowedRatings.includes(r));
@@ -188,13 +195,16 @@ export default {
         return arr.filter(m => seen.has(m.id) ? false : seen.add(m.id));
       }
 
-      let [r1, r2] = await Promise.all([fetchPage(page1, true), fetchPage(page2, true)]);
-      let results = dedupe([...r1, ...r2]);
-      // If duration filter leaves fewer than 10, retry both pages without it
-      if (duration && results.length < 10) {
-        [r1, r2] = await Promise.all([fetchPage(page1, false), fetchPage(page2, false)]);
-        results = dedupe([...r1, ...r2]);
-      }
+      // Two pages in parallel doubles the candidate pool. Progressive relaxation so narrow
+      // queries still fill a deck: strict first, then drop the duration constraint, then
+      // lower the well-known floor. Worst case 6 discover + 40 enrichment subrequests (< 50).
+      const HI_VOTES = 1000, LO_VOTES = 300;
+      const bothPages = async (withDur, votes) =>
+        dedupe((await Promise.all([fetchPage(page1, withDur, votes), fetchPage(page2, withDur, votes)])).flat());
+
+      let results = await bothPages(true, HI_VOTES);
+      if (results.length < 12 && duration) results = await bothPages(false, HI_VOTES);
+      if (results.length < 12) results = await bothPages(false, LO_VOTES);
 
       // Hard-filter by language before enrichment — cheaper than post-filtering and immune
       // to races where the client sends stale criteria. TMDB's with_original_language param
@@ -239,6 +249,16 @@ export default {
           // belongs_to_collection is already in the TMDB detail response — no extra fetch.
           const title = detail.title || m.title;
 
+          // Sequel bias signals: a confirmed numbered/part sequel is tiered to the back;
+          // a film that merely belongs to a franchise (unmarked sequels like "Aliens" AND
+          // franchise originals) gets a mild penalty so standalones surface first.
+          // franchisePen 0.7 → a franchise film only beats a standalone in ~5% of
+          // head-to-heads, so standalones fill the deck first and franchise entries
+          // (including subtitle sequels like "…: Civil War") mostly fill leftover slots.
+          const collection = detail.belongs_to_collection;
+          const confirmedSeq = isLikelySequel(title, collection) ? 1 : 0;
+          const franchisePen = (collection?.name && !confirmedSeq) ? 0.7 : 0;
+
           return {
             id: m.id,
             title,
@@ -255,7 +275,8 @@ export default {
             poster: m.poster_path ? `${TMDB_IMG}${m.poster_path}` : null,
             streaming: [],
             color: "#1a1a24",
-            _isSequel: isLikelySequel(title, detail.belongs_to_collection), // stripped before return
+            _confirmedSeq: confirmedSeq, // stripped before return
+            _franchisePen: franchisePen,
           };
         } catch {
           return null;
@@ -275,17 +296,16 @@ export default {
         return true;
       });
 
-      // Slight bias against sequels: weighted random sort where sequels get a +0.3
-      // offset (keys in [0.3, 1.3) vs [0, 1) for originals). With this offset, a
-      // non-sequel beats a sequel ~75% of head-to-heads. Client takes the first 10,
-      // so sequels mostly land outside without being eliminated entirely.
-      finalMovies.sort((a, b) => {
-        const aKey = Math.random() + (a._isSequel ? 0.3 : 0);
-        const bKey = Math.random() + (b._isSequel ? 0.3 : 0);
-        return aKey - bKey;
-      });
-      // Strip the internal hint — clients don't need to see it.
-      finalMovies.forEach(m => { delete m._isSequel; });
+      // Strong bias against sequels. Tier 1: confirmed numbered/part sequels sort strictly
+      // to the back — they only make the deck if there aren't enough other films to fill
+      // it. Tier 2 (within the rest): a mild random penalty for franchise films so
+      // standalones surface first. Client takes the first 10.
+      finalMovies.sort((a, b) =>
+        (a._confirmedSeq - b._confirmedSeq) ||
+        ((Math.random() + a._franchisePen) - (Math.random() + b._franchisePen))
+      );
+      // Strip the internal hints — clients don't need to see them.
+      finalMovies.forEach(m => { delete m._confirmedSeq; delete m._franchisePen; });
 
       return json(finalMovies);
     }
