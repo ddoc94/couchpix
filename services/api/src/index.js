@@ -490,10 +490,41 @@ export default {
         }
         if (!openAtTime(p.regularOpeningHours?.periods)) return false;
         return true;
-      })
-        // Union spans multiple cuisines — rank best-rated first, then cap the deck.
-        .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-        .slice(0, 10);
+      });
+
+      // Balance the deck across the picked cuisines rather than taking a global top-10 by
+      // rating — otherwise one cuisine whose spots happen to rate higher (e.g. Mediterranean)
+      // crowds out the others (e.g. American). Build a per-cuisine bucket (a place can be in
+      // several, since a search can surface it under multiple cuisines), sort each by rating,
+      // then round-robin: take turns pulling each cuisine's best unused spot until the deck
+      // is full. Cuisines with few matches simply run dry and the rest fill the remainder.
+      const DECK = 10;
+      const cuisineOrder = [...cuisineList].sort(() => Math.random() - 0.5); // fair starting turn
+      const buckets = new Map(cuisineOrder.map(c => [c, []]));
+      for (const p of filtered) {
+        for (const c of (matchedBy.get(p.id) || [])) {
+          if (buckets.has(c)) buckets.get(c).push(p);
+        }
+      }
+      for (const arr of buckets.values()) arr.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+
+      const balanced = [];
+      const used = new Set();
+      let pulled = true;
+      while (balanced.length < DECK && pulled) {
+        pulled = false;
+        for (const c of cuisineOrder) {
+          const arr = buckets.get(c);
+          while (arr && arr.length && used.has(arr[0].id)) arr.shift(); // skip already-picked
+          if (arr && arr.length) {
+            const p = arr.shift();
+            used.add(p.id);
+            balanced.push(p);
+            pulled = true;
+            if (balanced.length >= DECK) break;
+          }
+        }
+      }
 
       // Format Google's priceRange (Money start/end) into a compact "$15–30".
       const CUR = { USD: "$", CAD: "$", AUD: "$", NZD: "$", EUR: "€", GBP: "£", JPY: "¥", INR: "₹" };
@@ -527,7 +558,7 @@ export default {
         return null;
       };
 
-      const cards = await Promise.all(filtered.map(async p => ({
+      const cards = await Promise.all(balanced.map(async p => ({
         id: p.id,
         name: p.displayName?.text || "Unknown",
         address: p.formattedAddress || "",
