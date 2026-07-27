@@ -312,7 +312,8 @@ export default {
     // day (0=Sun..6=Sat) + minute (0..1439) are the intended ORDER/DINING time in the
     // user's local timezone (the browser sends them; the group is local to the ZIP).
     // mode=dine_in filters by dineIn and accepts optional narrowing flags:
-    //   &reservable=1 &outdoorSeating=1 &alcohol=1 &goodForKids=1
+    //   &reservable=1 &outdoorSeating=1 &alcohol=1 &goodForGroups=1 &vegetarian=1
+    //   &dogs=1 &liveMusic=1 &sports=1 &dessert=1 &kidsMenu=1
     if (url.pathname === "/restaurants") {
       const key = env.GOOGLE_PLACES_KEY;
       if (!key) return json({ error: "GOOGLE_PLACES_KEY not configured" }, 500);
@@ -333,10 +334,17 @@ export default {
       const modeParam = url.searchParams.get("mode");
       const mode = modeParam === "delivery" ? "delivery" : modeParam === "dine_in" ? "dine_in" : "takeout";
       // Optional dine-in narrowing filters (only meaningful when mode === "dine_in").
-      const wantReservable = url.searchParams.get("reservable") === "1";
-      const wantOutdoor = url.searchParams.get("outdoorSeating") === "1";
-      const wantAlcohol = url.searchParams.get("alcohol") === "1";
-      const wantKids = url.searchParams.get("goodForKids") === "1";
+      const on = (k) => url.searchParams.get(k) === "1";
+      const wantReservable = on("reservable");
+      const wantOutdoor = on("outdoorSeating");
+      const wantAlcohol = on("alcohol");
+      const wantGroups = on("goodForGroups");
+      const wantVegetarian = on("vegetarian");
+      const wantDogs = on("dogs");
+      const wantLiveMusic = on("liveMusic");
+      const wantSports = on("sports");
+      const wantDessert = on("dessert");
+      const wantKidsMenu = on("kidsMenu");
       const day = url.searchParams.has("day") ? parseInt(url.searchParams.get("day")) : null;
       const minute = url.searchParams.has("minute") ? parseInt(url.searchParams.get("minute")) : null;
       const BUFFER = 45; // minutes the place must stay open past the order time
@@ -361,15 +369,17 @@ export default {
         "places.primaryTypeDisplayName", "places.googleMapsUri", "places.photos",
         "places.currentOpeningHours", "places.regularOpeningHours",
         "places.editorialSummary", "places.takeout", "places.delivery", "places.dineIn",
-        "places.reservable", "places.outdoorSeating", "places.goodForChildren",
+        "places.reservable", "places.outdoorSeating", "places.menuForChildren",
         "places.servesBeer", "places.servesWine", "places.servesCocktails",
+        "places.goodForGroups", "places.servesVegetarianFood", "places.allowsDogs",
+        "places.liveMusic", "places.goodForWatchingSports", "places.servesDessert",
       ].join(",");
       const byId = new Map();
       const matchedBy = new Map(); // place id -> Set of picked cuisines that surfaced it
       for (const cuisine of cuisineList) {
-        // v2 cache: field mask now includes dineIn + atmosphere fields, so old
-        // `food:` rows would be missing them — bump the prefix to re-fetch.
-        const cacheKey = `food2:${zip}:${cuisine.toLowerCase()}:${radius}`;
+        // Cache version tracks the field mask — bump the prefix whenever the mask
+        // changes so old rows (missing the new atmosphere fields) aren't reused.
+        const cacheKey = `food3:${zip}:${cuisine.toLowerCase()}:${radius}`;
         let pl = await env.SESSIONS.get(cacheKey, "json");
         if (!pl) {
           const pr = await fetch("https://places.googleapis.com/v1/places:searchText", {
@@ -439,8 +449,14 @@ export default {
           // LACKS the attribute — keep unknowns so the deck doesn't collapse.
           if (wantReservable && p.reservable === false) return false;
           if (wantOutdoor && p.outdoorSeating === false) return false;
-          if (wantKids && p.goodForChildren === false) return false;
           if (wantAlcohol && servesAlcohol(p) === false) return false;
+          if (wantGroups && p.goodForGroups === false) return false;
+          if (wantVegetarian && p.servesVegetarianFood === false) return false;
+          if (wantDogs && p.allowsDogs === false) return false;
+          if (wantLiveMusic && p.liveMusic === false) return false;
+          if (wantSports && p.goodForWatchingSports === false) return false;
+          if (wantDessert && p.servesDessert === false) return false;
+          if (wantKidsMenu && p.menuForChildren === false) return false;
         } else {
           if (p.takeout !== true) return false;               // takeout/delivery must offer takeout
           if (mode === "delivery" && p.delivery !== true) return false;
@@ -497,7 +513,13 @@ export default {
         reservable: p.reservable ?? null,
         outdoorSeating: p.outdoorSeating ?? null,
         servesAlcohol: servesAlcohol(p),
-        goodForChildren: p.goodForChildren ?? null,
+        goodForGroups: p.goodForGroups ?? null,
+        servesVegetarianFood: p.servesVegetarianFood ?? null,
+        allowsDogs: p.allowsDogs ?? null,
+        liveMusic: p.liveMusic ?? null,
+        goodForWatchingSports: p.goodForWatchingSports ?? null,
+        servesDessert: p.servesDessert ?? null,
+        menuForChildren: p.menuForChildren ?? null,
         mapsUri: p.googleMapsUri || null,
         photo: await resolvePhoto(p.photos?.[0]?.name),
       })));

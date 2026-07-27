@@ -3409,7 +3409,13 @@ async function discoverRestaurants(session) {
     if (c.reservable) params.set("reservable", "1");
     if (c.outdoorSeating) params.set("outdoorSeating", "1");
     if (c.servesAlcohol) params.set("alcohol", "1");
-    if (c.goodForKids) params.set("goodForKids", "1");
+    if (c.goodForGroups) params.set("goodForGroups", "1");
+    if (c.vegetarian) params.set("vegetarian", "1");
+    if (c.dogs) params.set("dogs", "1");
+    if (c.liveMusic) params.set("liveMusic", "1");
+    if (c.sports) params.set("sports", "1");
+    if (c.dessert) params.set("dessert", "1");
+    if (c.kidsMenu) params.set("kidsMenu", "1");
   }
   try {
     const res = await fetch(`${TMDB_PROXY}/restaurants?${params}`);
@@ -3477,7 +3483,13 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   const [reservable, setReservable] = useState(!!session.criteria?.reservable);
   const [outdoorSeating, setOutdoorSeating] = useState(!!session.criteria?.outdoorSeating);
   const [servesAlcohol, setServesAlcohol] = useState(!!session.criteria?.servesAlcohol);
-  const [goodForKids, setGoodForKids] = useState(!!session.criteria?.goodForKids);
+  const [goodForGroups, setGoodForGroups] = useState(!!session.criteria?.goodForGroups);
+  const [vegetarian, setVegetarian] = useState(!!session.criteria?.vegetarian);
+  const [dogs, setDogs] = useState(!!session.criteria?.dogs);
+  const [liveMusic, setLiveMusic] = useState(!!session.criteria?.liveMusic);
+  const [sports, setSports] = useState(!!session.criteria?.sports);
+  const [dessert, setDessert] = useState(!!session.criteria?.dessert);
+  const [kidsMenu, setKidsMenu] = useState(!!session.criteria?.kidsMenu);
 
   const [submitted, setSubmitted] = useState(false);
   const submittedRef = useRef(false);
@@ -3551,7 +3563,8 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
       const criteria = isAdmin
         ? { ...s.criteria, zip: zip.trim(), mode, minRating, distanceMi, allowedPrices,
             when: when === "now" ? "now" : scheduledTime,
-            reservable, outdoorSeating, servesAlcohol, goodForKids }
+            reservable, outdoorSeating, servesAlcohol, goodForGroups, vegetarian,
+            dogs, liveMusic, sports, dessert, kidsMenu }
         : s.criteria;
       const updated = {
         ...s,
@@ -3655,7 +3668,13 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
                 <Chip active={reservable} onClick={() => setReservable(v => !v)}>Takes reservations</Chip>
                 <Chip active={outdoorSeating} onClick={() => setOutdoorSeating(v => !v)}>Outdoor seating</Chip>
                 <Chip active={servesAlcohol} onClick={() => setServesAlcohol(v => !v)}>Serves alcohol</Chip>
-                <Chip active={goodForKids} onClick={() => setGoodForKids(v => !v)}>Good for kids</Chip>
+                <Chip active={goodForGroups} onClick={() => setGoodForGroups(v => !v)}>Good for groups</Chip>
+                <Chip active={vegetarian} onClick={() => setVegetarian(v => !v)}>Vegetarian-friendly</Chip>
+                <Chip active={dogs} onClick={() => setDogs(v => !v)}>Dog-friendly</Chip>
+                <Chip active={liveMusic} onClick={() => setLiveMusic(v => !v)}>Live music</Chip>
+                <Chip active={sports} onClick={() => setSports(v => !v)}>Good for watching sports</Chip>
+                <Chip active={dessert} onClick={() => setDessert(v => !v)}>Serves dessert</Chip>
+                <Chip active={kidsMenu} onClick={() => setKidsMenu(v => !v)}>Kids menu</Chip>
               </div>
             </Field>
           )}
@@ -3775,13 +3794,19 @@ function RestaurantCard({ r, index, total, hideCount }) {
             {r.takeout && <span style={{ background:C.accentSoft, color:C.accent, border:`1px solid ${C.accent}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}><Ico name="takeout" size={12} style={{ marginRight:4, verticalAlign:-2 }} />Takeout</span>}
           </div>
 
-          {[r.outdoorSeating, r.reservable, r.servesAlcohol, r.goodForChildren].some(Boolean) && (
+          {[r.outdoorSeating, r.reservable, r.servesAlcohol, r.goodForGroups, r.servesVegetarianFood, r.allowsDogs, r.liveMusic, r.goodForWatchingSports, r.servesDessert, r.menuForChildren].some(Boolean) && (
             <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
               {[
                 r.outdoorSeating && "Outdoor seating",
                 r.reservable && "Takes reservations",
                 r.servesAlcohol && "Serves alcohol",
-                r.goodForChildren && "Good for kids",
+                r.goodForGroups && "Good for groups",
+                r.servesVegetarianFood && "Vegetarian-friendly",
+                r.allowsDogs && "Dog-friendly",
+                r.liveMusic && "Live music",
+                r.goodForWatchingSports && "Good for sports",
+                r.servesDessert && "Serves dessert",
+                r.menuForChildren && "Kids menu",
               ].filter(Boolean).map(label => (
                 <span key={label} style={{ background:C.bg, color:C.muted, border:`1px solid ${C.border}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>{label}</span>
               ))}
