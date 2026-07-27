@@ -365,8 +365,8 @@ export default {
       // 2) Union search across the picked cuisines, each cached 6h by (zip,cuisine,radius).
       const FIELD_MASK = [
         "places.id", "places.displayName", "places.formattedAddress", "places.location",
-        "places.rating", "places.userRatingCount", "places.priceLevel",
-        "places.primaryTypeDisplayName", "places.googleMapsUri", "places.photos",
+        "places.rating", "places.userRatingCount", "places.priceLevel", "places.priceRange",
+        "places.primaryTypeDisplayName", "places.googleMapsUri", "places.websiteUri", "places.photos",
         "places.currentOpeningHours", "places.regularOpeningHours",
         "places.editorialSummary", "places.takeout", "places.delivery", "places.dineIn",
         "places.reservable", "places.outdoorSeating", "places.menuForChildren",
@@ -379,7 +379,7 @@ export default {
       for (const cuisine of cuisineList) {
         // Cache version tracks the field mask — bump the prefix whenever the mask
         // changes so old rows (missing the new atmosphere fields) aren't reused.
-        const cacheKey = `food3:${zip}:${cuisine.toLowerCase()}:${radius}`;
+        const cacheKey = `food4:${zip}:${cuisine.toLowerCase()}:${radius}`;
         let pl = await env.SESSIONS.get(cacheKey, "json");
         if (!pl) {
           const pr = await fetch("https://places.googleapis.com/v1/places:searchText", {
@@ -475,6 +475,18 @@ export default {
         .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
         .slice(0, 10);
 
+      // Format Google's priceRange (Money start/end) into a compact "$15–30".
+      const CUR = { USD: "$", CAD: "$", AUD: "$", NZD: "$", EUR: "€", GBP: "£", JPY: "¥", INR: "₹" };
+      const priceRange = (pr) => {
+        if (!pr) return null;
+        const s = pr.startPrice, e = pr.endPrice;
+        const sym = CUR[(s || e)?.currencyCode] || "";
+        if (s?.units != null && e?.units != null) return `${sym}${s.units}–${e.units}`;
+        if (s?.units != null) return `${sym}${s.units}+`;
+        if (e?.units != null) return `up to ${sym}${e.units}`;
+        return null;
+      };
+
       // 4) Resolve one photo each to a key-less URL + shape to card fields.
       const toRad = d => d * Math.PI / 180;
       const distMi = (a, b) => {
@@ -520,6 +532,8 @@ export default {
         goodForWatchingSports: p.goodForWatchingSports ?? null,
         servesDessert: p.servesDessert ?? null,
         menuForChildren: p.menuForChildren ?? null,
+        priceRange: priceRange(p.priceRange),
+        website: p.websiteUri || null,
         mapsUri: p.googleMapsUri || null,
         photo: await resolvePhoto(p.photos?.[0]?.name),
       })));
