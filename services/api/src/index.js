@@ -163,7 +163,7 @@ export default {
       do { page2 = Math.floor(Math.random() * maxPage) + 1; } while (page2 === page1);
 
       // voteCount is the "how well-known" floor — the biggest lever against the obscure
-      // indie long tail. A high floor (~1000 votes) keeps the pool to movies a group would
+      // indie long tail. A high floor (~800 votes) keeps the pool to movies a group would
       // recognize; we relax it only if the strict filters leave too few candidates.
       async function fetchPage(page, withDuration, voteCount) {
         let q = `${TMDB_BASE}/discover/movie?api_key=${TMDB_KEY}&sort_by=${sortBy}&vote_count.gte=${voteCount}&vote_average.gte=6.0&language=en-US&page=${page}`;
@@ -198,7 +198,7 @@ export default {
       // Two pages in parallel doubles the candidate pool. Progressive relaxation so narrow
       // queries still fill a deck: strict first, then drop the duration constraint, then
       // lower the well-known floor. Worst case 6 discover + 40 enrichment subrequests (< 50).
-      const HI_VOTES = 1000, LO_VOTES = 300;
+      const HI_VOTES = 800, LO_VOTES = 300;
       const bothPages = async (withDur, votes) =>
         dedupe((await Promise.all([fetchPage(page1, withDur, votes), fetchPage(page2, withDur, votes)])).flat());
 
