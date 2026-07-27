@@ -333,7 +333,7 @@ export default {
     // user's local timezone (the browser sends them; the group is local to the ZIP).
     // mode=dine_in filters by dineIn and accepts optional narrowing flags:
     //   &reservable=1 &outdoorSeating=1 &alcohol=1 &goodForGroups=1 &vegetarian=1
-    //   &dogs=1 &liveMusic=1 &sports=1 &dessert=1 &kidsMenu=1
+    //   &dogs=1 &liveMusic=1 &sports=1 &dessert=1 &kidsMenu=1 &diningStyle=casual|formal
     if (url.pathname === "/restaurants") {
       const key = env.GOOGLE_PLACES_KEY;
       if (!key) return json({ error: "GOOGLE_PLACES_KEY not configured" }, 500);
@@ -365,6 +365,8 @@ export default {
       const wantSports = on("sports");
       const wantDessert = on("dessert");
       const wantKidsMenu = on("kidsMenu");
+      const diningStyle = ["casual", "formal"].includes(url.searchParams.get("diningStyle"))
+        ? url.searchParams.get("diningStyle") : null;
       const day = url.searchParams.has("day") ? parseInt(url.searchParams.get("day")) : null;
       const minute = url.searchParams.has("minute") ? parseInt(url.searchParams.get("minute")) : null;
       const BUFFER = 45; // minutes the place must stay open past the order time
@@ -386,7 +388,8 @@ export default {
       const FIELD_MASK = [
         "places.id", "places.displayName", "places.formattedAddress", "places.location",
         "places.rating", "places.userRatingCount", "places.priceLevel", "places.priceRange",
-        "places.primaryTypeDisplayName", "places.googleMapsUri", "places.websiteUri", "places.photos",
+        "places.primaryTypeDisplayName", "places.primaryType", "places.types",
+        "places.googleMapsUri", "places.websiteUri", "places.photos",
         "places.currentOpeningHours", "places.regularOpeningHours",
         "places.editorialSummary", "places.takeout", "places.delivery", "places.dineIn",
         "places.reservable", "places.outdoorSeating", "places.menuForChildren",
@@ -399,7 +402,7 @@ export default {
       for (const cuisine of cuisineList) {
         // Cache version tracks the field mask — bump the prefix whenever the mask
         // changes so old rows (missing the new atmosphere fields) aren't reused.
-        const cacheKey = `food4:${zip}:${cuisine.toLowerCase()}:${radius}`;
+        const cacheKey = `food5:${zip}:${cuisine.toLowerCase()}:${radius}`;
         let pl = await env.SESSIONS.get(cacheKey, "json");
         if (!pl) {
           const pr = await fetch("https://places.googleapis.com/v1/places:searchText", {
@@ -462,6 +465,19 @@ export default {
         return null;
       };
 
+      // Dining style from Google's venue TYPES (not service-option types like
+      // meal_takeaway, which sit-down places also carry). Quick / counter-serve →
+      // "casual"; anything else is treated as table-service ("sit-down", up to formal).
+      const QUICK_TYPES = new Set([
+        "fast_food_restaurant", "cafe", "coffee_shop", "coffee_stand", "food_court",
+        "sandwich_shop", "hamburger_restaurant", "donut_shop", "cafeteria", "bakery",
+        "ice_cream_shop", "tea_house", "bagel_shop", "juice_shop",
+      ]);
+      const isQuickService = (p) => {
+        const types = [p.primaryType, ...(p.types || [])].filter(Boolean);
+        return types.some(t => QUICK_TYPES.has(t));
+      };
+
       const filtered = places.filter(p => {
         if (mode === "dine_in") {
           if (p.dineIn !== true) return false;                // must offer dine-in
@@ -477,6 +493,10 @@ export default {
           if (wantSports && p.goodForWatchingSports === false) return false;
           if (wantDessert && p.servesDessert === false) return false;
           if (wantKidsMenu && p.menuForChildren === false) return false;
+          // Dining style: casual keeps only quick/counter-serve; formal keeps only
+          // table-service (sit-down and up). Unknown/typeless places count as table-service.
+          if (diningStyle === "casual" && !isQuickService(p)) return false;
+          if (diningStyle === "formal" && isQuickService(p)) return false;
         } else {
           if (p.takeout !== true) return false;               // takeout/delivery must offer takeout
           if (mode === "delivery" && p.delivery !== true) return false;
@@ -583,6 +603,7 @@ export default {
         goodForWatchingSports: p.goodForWatchingSports ?? null,
         servesDessert: p.servesDessert ?? null,
         menuForChildren: p.menuForChildren ?? null,
+        serviceStyle: isQuickService(p) ? "counter" : "table",
         priceRange: priceRange(p.priceRange),
         website: p.websiteUri || null,
         mapsUri: p.googleMapsUri || null,

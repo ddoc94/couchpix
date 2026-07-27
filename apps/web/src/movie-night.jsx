@@ -3407,6 +3407,7 @@ async function discoverRestaurants(session) {
     if (c.sports) params.set("sports", "1");
     if (c.dessert) params.set("dessert", "1");
     if (c.kidsMenu) params.set("kidsMenu", "1");
+    if (c.diningStyle && c.diningStyle !== "any") params.set("diningStyle", c.diningStyle);
   }
   try {
     const res = await fetch(`${TMDB_PROXY}/restaurants?${params}`);
@@ -3481,6 +3482,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   const [sports, setSports] = useState(!!session.criteria?.sports);
   const [dessert, setDessert] = useState(!!session.criteria?.dessert);
   const [kidsMenu, setKidsMenu] = useState(!!session.criteria?.kidsMenu);
+  const [diningStyle, setDiningStyle] = useState(session.criteria?.diningStyle || "any"); // "any" | "casual" | "formal"
 
   const [submitted, setSubmitted] = useState(false);
   const submittedRef = useRef(false);
@@ -3555,7 +3557,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
         ? { ...s.criteria, zip: zip.trim(), mode, minRating, distanceMi, allowedPrices,
             when: when === "now" ? "now" : scheduledTime,
             reservable, outdoorSeating, servesAlcohol, goodForGroups, vegetarian,
-            dogs, liveMusic, sports, dessert, kidsMenu }
+            dogs, liveMusic, sports, dessert, kidsMenu, diningStyle }
         : s.criteria;
       const updated = {
         ...s,
@@ -3712,6 +3714,20 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
           {mode === "dine_in" && (
             <Field label="Dine-in preferences (optional)">
               <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>Turn on to only show places that match.</div>
+              <div style={{ marginBottom:12 }}>
+                <div style={{ fontSize:12, color:C.muted, marginBottom:6 }}>Dining style</div>
+                <div style={{ display:"flex", gap:8 }}>
+                  {[{v:"any",l:"Any"},{v:"casual",l:"Casual"},{v:"formal",l:"Sit-down"}].map(opt => (
+                    <button key={opt.v} onClick={() => setDiningStyle(opt.v)}
+                      style={{ flex:1, padding:"9px 8px", borderRadius:10, border:`1.5px solid ${diningStyle === opt.v ? C.accent : C.border}`, background:diningStyle === opt.v ? C.accentSoft : "transparent", color:diningStyle === opt.v ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
+                      {opt.l}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize:11, color:C.muted, marginTop:6 }}>
+                  Casual = quick / counter-serve · Sit-down = full-service, up to formal.
+                </div>
+              </div>
               <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
                 <Chip active={reservable} onClick={() => setReservable(v => !v)}>Takes reservations</Chip>
                 <Chip active={outdoorSeating} onClick={() => setOutdoorSeating(v => !v)}>Outdoor seating</Chip>
@@ -3771,6 +3787,7 @@ function RestaurantCard({ r, index, total, hideCount }) {
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:10 }}>
             <span style={{ color:C.muted, fontSize:13 }}>{r.cuisine}</span>
             {(r.priceRange || price) && <span style={{ color:C.muted, fontSize:13 }}>· {r.priceRange || price}</span>}
+            {r.serviceStyle && <span style={{ color:C.muted, fontSize:13 }}>· {r.serviceStyle === "counter" ? "Counter-serve" : "Sit-down"}</span>}
           </div>
 
           {r.rating != null && (
