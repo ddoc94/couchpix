@@ -3637,24 +3637,6 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
               {mode === "delivery" ? "Places that deliver (or offer takeout)." : mode === "takeout" ? "Places that offer takeout." : "Restaurants you can sit down and eat at."}
             </div>
           </Field>
-
-          {mode === "dine_in" && (
-            <Field label="Dine-in preferences (optional)">
-              <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>Turn on to only show places that match.</div>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-                <Chip active={reservable} onClick={() => setReservable(v => !v)}>Takes reservations</Chip>
-                <Chip active={outdoorSeating} onClick={() => setOutdoorSeating(v => !v)}>Outdoor seating</Chip>
-                <Chip active={servesAlcohol} onClick={() => setServesAlcohol(v => !v)}>Serves alcohol</Chip>
-                <Chip active={goodForGroups} onClick={() => setGoodForGroups(v => !v)}>Good for groups</Chip>
-                <Chip active={vegetarian} onClick={() => setVegetarian(v => !v)}>Vegetarian-friendly</Chip>
-                <Chip active={dogs} onClick={() => setDogs(v => !v)}>Dog-friendly</Chip>
-                <Chip active={liveMusic} onClick={() => setLiveMusic(v => !v)}>Live music</Chip>
-                <Chip active={sports} onClick={() => setSports(v => !v)}>Good for watching sports</Chip>
-                <Chip active={dessert} onClick={() => setDessert(v => !v)}>Serves dessert</Chip>
-                <Chip active={kidsMenu} onClick={() => setKidsMenu(v => !v)}>Kids menu</Chip>
-              </div>
-            </Field>
-          )}
         </>
       )}
 
@@ -3666,7 +3648,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
         </div>
       </Field>
 
-      <Field label="Veto (1 cuisine)">
+      <Field label="Veto (optional)">
         <div style={{ fontSize:12, color:C.muted, marginBottom:6 }}>A vetoed cuisine is excluded even if someone else picked it.</div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
           {FOOD_CUISINES.map(c => (
@@ -3681,32 +3663,6 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
             <input value={zip} onChange={e => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
               placeholder="e.g. 98103" inputMode="numeric"
               style={{ ...inputStyle, fontFamily:"monospace", fontSize:20, letterSpacing:4, textAlign:"center" }} />
-          </Field>
-
-          <Field label="Minimum Google rating">
-            <div style={{ display:"flex", gap:8 }}>
-              {[{v:0,l:"Any"},{v:3.5,l:"3.5+"},{v:4,l:"4.0+"},{v:4.5,l:"4.5+"}].map(opt => (
-                <button key={opt.v} onClick={() => setMinRating(opt.v)}
-                  style={{ flex:1, padding:"10px 8px", borderRadius:10, border:`1.5px solid ${minRating === opt.v ? C.accent : C.border}`, background:minRating === opt.v ? C.accentSoft : "transparent", color:minRating === opt.v ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
-                  {opt.l === "Any" ? "Any" : <span style={{ display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="star" size={12} filled /> {opt.l}</span>}
-                </button>
-              ))}
-            </div>
-          </Field>
-
-          <Field label="Price range">
-            <div style={{ fontSize:12, color:C.muted, marginBottom:6 }}>Deselect price tiers to exclude them</div>
-            <div style={{ display:"flex", gap:8 }}>
-              {ALL_PRICES.map(p => {
-                const active = allowedPrices.includes(p);
-                return (
-                  <button key={p} onClick={() => togglePrice(p)}
-                    style={{ flex:1, padding:"10px 8px", borderRadius:10, border:`1.5px solid ${active ? C.accent : C.border}`, background:active ? C.accentSoft : "transparent", color:active ? C.accent : C.muted, cursor:"pointer", fontSize:14, fontWeight:700 }}>
-                    {p}
-                  </button>
-                );
-              })}
-            </div>
           </Field>
 
           <Field label={`Distance: ${distanceMi} mi`}>
@@ -3735,6 +3691,50 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
               We only show places that'll still be open at least 45 minutes after your {mode === "dine_in" ? "dining" : "order"} time.
             </div>
           </Field>
+
+          <Field label="Price range">
+            <div style={{ fontSize:12, color:C.muted, marginBottom:6 }}>Deselect price tiers to exclude them</div>
+            <div style={{ display:"flex", gap:8 }}>
+              {ALL_PRICES.map(p => {
+                const active = allowedPrices.includes(p);
+                return (
+                  <button key={p} onClick={() => togglePrice(p)}
+                    style={{ flex:1, padding:"10px 8px", borderRadius:10, border:`1.5px solid ${active ? C.accent : C.border}`, background:active ? C.accentSoft : "transparent", color:active ? C.accent : C.muted, cursor:"pointer", fontSize:14, fontWeight:700 }}>
+                    {p}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          <Field label="Minimum Google rating">
+            <div style={{ display:"flex", gap:8 }}>
+              {[{v:0,l:"Any"},{v:3.5,l:"3.5+"},{v:4,l:"4.0+"},{v:4.5,l:"4.5+"}].map(opt => (
+                <button key={opt.v} onClick={() => setMinRating(opt.v)}
+                  style={{ flex:1, padding:"10px 8px", borderRadius:10, border:`1.5px solid ${minRating === opt.v ? C.accent : C.border}`, background:minRating === opt.v ? C.accentSoft : "transparent", color:minRating === opt.v ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
+                  {opt.l === "Any" ? "Any" : <span style={{ display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="star" size={12} filled /> {opt.l}</span>}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          {mode === "dine_in" && (
+            <Field label="Dine-in preferences (optional)">
+              <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>Turn on to only show places that match.</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                <Chip active={reservable} onClick={() => setReservable(v => !v)}>Takes reservations</Chip>
+                <Chip active={outdoorSeating} onClick={() => setOutdoorSeating(v => !v)}>Outdoor seating</Chip>
+                <Chip active={servesAlcohol} onClick={() => setServesAlcohol(v => !v)}>Serves alcohol</Chip>
+                <Chip active={goodForGroups} onClick={() => setGoodForGroups(v => !v)}>Good for groups</Chip>
+                <Chip active={vegetarian} onClick={() => setVegetarian(v => !v)}>Vegetarian-friendly</Chip>
+                <Chip active={dogs} onClick={() => setDogs(v => !v)}>Dog-friendly</Chip>
+                <Chip active={liveMusic} onClick={() => setLiveMusic(v => !v)}>Live music</Chip>
+                <Chip active={sports} onClick={() => setSports(v => !v)}>Good for watching sports</Chip>
+                <Chip active={dessert} onClick={() => setDessert(v => !v)}>Serves dessert</Chip>
+                <Chip active={kidsMenu} onClick={() => setKidsMenu(v => !v)}>Kids menu</Chip>
+              </div>
+            </Field>
+          )}
         </>
       )}
 
