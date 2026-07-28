@@ -928,7 +928,14 @@ export default function MovieNightApp() {
       }}
       onCancel={() => setScreen("home")} />,
     setup: <SetupScreen userId={userId} userName={userName} setUserName={setUserName} activity={setupActivity}
-      onCreated={(s) => { syncSession(s); rememberSession(s); setScreen("lobby"); }} />,
+      onCreated={(s) => {
+        syncSession(s); rememberSession(s);
+        // Live sessions → lobby (share, wait, start together). Plan-ahead → straight
+        // into the admin's OWN preferences: you answer first, and the waiting screen
+        // afterwards is the share surface. Prevents the "shared a link but never
+        // answered, then wandered off" stranding.
+        routeIntoSession(s);
+      }} />,
     join: <JoinScreen session={session} userId={userId} userName={userName} setUserName={setUserName}
       onJoined={(s) => { syncSession(s); rememberSession(s); routeIntoSession(s); }}
       onSessionLoad={(s) => syncSession(s)} />,
@@ -1923,18 +1930,25 @@ function AsyncWaitingExtras({ session, userId, onAction }) {
   // waiting out the lazy async polling interval.
   const startNow = () => patchSession(session.id, { set: { expectedCount: joined } }).then(() => onAction?.());
 
+  // Since plan-ahead admins answer BEFORE sharing, this screen is the primary
+  // invite surface — lead with the share affordances (QR included), not bury them.
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:10 }}>
       <div style={{ textAlign:"center", fontSize:12, color:C.muted }}>
-        {joined} of {expected} in · the link works anytime — check back here for the results.
+        {joined === 1
+          ? "You're in! Now send the link — everyone answers on their own time."
+          : `${joined} of ${expected} in · the link works anytime — check back here for the results.`}
       </div>
+      <div style={{ display:"flex", justifyContent:"center" }}>
+        <MiniQR text={sessionUrl} size={140} />
+      </div>
+      <Btn onClick={shareUrl} big><Ico name="share" size={15} style={{ marginRight:6, verticalAlign:-2 }} />Share invite link</Btn>
       <div style={{ display:"flex", gap:8 }}>
         <input value={sessionUrl} readOnly style={{ ...inputStyle, flex:1, fontSize:12, color:C.muted }} />
         <Btn onClick={copyUrl} outline>{copied ? "✓ Copied" : "Copy"}</Btn>
       </div>
-      <Btn onClick={shareUrl} outline big><Ico name="share" size={15} style={{ marginRight:6, verticalAlign:-2 }} />Share invite link</Btn>
       {isAdmin && joined >= 2 && joined < expected && (
-        <Btn onClick={startNow} big>Start now with {joined} people →</Btn>
+        <Btn onClick={startNow} outline big>Start now with {joined} people →</Btn>
       )}
     </div>
   );
@@ -2119,7 +2133,7 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
     return (
       <div style={{ paddingTop: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
         <div style={{ marginBottom:4 }}><Ico name="hourglass" size={40} color={C.muted} stroke={1.5} /></div>
-        <h2 style={{ margin: 0 }}>Waiting for everyone…</h2>
+        <h2 style={{ margin: 0 }}>{latestSession.asyncMode && !rosterFull ? "Invite your crew" : "Waiting for everyone…"}</h2>
         <div style={{ width: "100%", background: C.card, borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
           {latestSession.participants?.map(p => (
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
@@ -3849,7 +3863,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
     return (
       <div style={{ paddingTop:40, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
         <div style={{ marginBottom:4 }}><Ico name="hourglass" size={40} color={C.muted} stroke={1.5} /></div>
-        <h2 style={{ margin:0 }}>Waiting for everyone…</h2>
+        <h2 style={{ margin:0 }}>{latestSession.asyncMode && !rosterFull ? "Invite your crew" : "Waiting for everyone…"}</h2>
         <div style={{ width:"100%", background:C.card, borderRadius:12, padding:16, border:`1px solid ${C.border}` }}>
           {latestSession.participants?.map(p => (
             <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:`1px solid ${C.border}` }}>
