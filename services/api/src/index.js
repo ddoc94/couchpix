@@ -228,11 +228,24 @@ export default {
           const detailRes = await fetch(`${TMDB_BASE}/movie/${m.id}?api_key=${TMDB_KEY}&append_to_response=credits&language=en-US`);
           const detail = await detailRes.json();
 
-          // Use imdb_id from detail to call OMDB (no separate external_ids call needed)
+          // Use imdb_id from detail to call OMDB (no separate external_ids call needed).
+          // OMDb answers (RT score, MPAA rating, director, awards) barely change, and the
+          // free key allows only 1,000 calls/day — which caps deck generation at ~50/day
+          // uncached. Cache each movie's answer in KV for 14 days so the daily budget is
+          // only spent on movies we've never seen; popular films (which the discovery bias
+          // deliberately favors) hit the cache almost every time.
           let omdb = null;
           if (detail.imdb_id) {
-            const omdbRes = await fetch(`https://www.omdbapi.com/?i=${detail.imdb_id}&apikey=${OMDB_KEY}`);
-            omdb = await omdbRes.json();
+            const omdbCacheKey = `omdb:${detail.imdb_id}`;
+            omdb = await env.SESSIONS.get(omdbCacheKey, "json");
+            if (!omdb) {
+              const omdbRes = await fetch(`https://www.omdbapi.com/?i=${detail.imdb_id}&apikey=${OMDB_KEY}`);
+              omdb = await omdbRes.json();
+              // Only cache real answers — never pin an error/rate-limit response for 2 weeks.
+              if (omdb?.Response === "True") {
+                await env.SESSIONS.put(omdbCacheKey, JSON.stringify(omdb), { expirationTtl: 60 * 60 * 24 * 14 });
+              }
+            }
           }
 
           let rt = null, mpaa = null, director = null, awards = null, imdbScore = null;
