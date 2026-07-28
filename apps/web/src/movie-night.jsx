@@ -240,9 +240,14 @@ async function claimSessionLock(sessionId, name) {
 // back to fast on any change or when the tab/app regains focus. Same UX as fixed
 // polling for the actor (their own write resets the cadence on the next tick), but
 // far fewer KV reads during the long "waiting for everyone" idle stretches.
+// Returns a `poke()` that forces an immediate re-fetch (resetting the backoff) —
+// used after writes whose consequences the same device needs to see right away
+// (e.g. the last plan-ahead submitter triggering deck generation) so slow-cadence
+// screens don't sit on stale state for a full interval.
 function useAdaptivePoll(sessionId, onData, { min = 2000, max = 8000, factor = 1.5 } = {}) {
   const cbRef = useRef(onData);
   cbRef.current = onData;
+  const pokeRef = useRef(() => {});
   useEffect(() => {
     if (!sessionId) return;
     let active = true, timer = null, delay = min, lastFP = null;
@@ -258,6 +263,7 @@ function useAdaptivePoll(sessionId, onData, { min = 2000, max = 8000, factor = 1
         if (active) timer = setTimeout(run, delay);
       }).catch(() => { if (active) timer = setTimeout(run, delay); });
     };
+    pokeRef.current = () => { if (active) { delay = min; clearTimeout(timer); run(); } };
     const onVisible = () => {
       if (document.visibilityState === "visible" && active) { delay = min; clearTimeout(timer); run(); }
     };
@@ -265,6 +271,7 @@ function useAdaptivePoll(sessionId, onData, { min = 2000, max = 8000, factor = 1
     run();
     return () => { active = false; clearTimeout(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, [sessionId]);
+  return useCallback(() => pokeRef.current(), []);
 }
 
 // Collect movie IDs the local user has marked as watched across all their saved sessions.
@@ -1802,7 +1809,7 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
 // link (re-shareable from anywhere, since there's no live lobby moment), joined
 // vs expected count, and an admin-only escape hatch that closes the roster at its
 // current size so matching starts with whoever's in.
-function AsyncWaitingExtras({ session, userId }) {
+function AsyncWaitingExtras({ session, userId, onAction }) {
   const [copied, setCopied] = useState(false);
   const sessionUrl = `${window.location.origin}${window.location.pathname}?session=${session?.id}`;
   const joined = session?.participants?.length || 1;
@@ -1820,9 +1827,10 @@ function AsyncWaitingExtras({ session, userId }) {
       else copyUrl();
     } catch (e) { if (e?.name !== "AbortError") copyUrl(); }
   };
-  // Close the roster at its current size. The next poll on any device then sees
-  // "everyone answered + headcount met" and kicks off deck generation.
-  const startNow = () => patchSession(session.id, { set: { expectedCount: joined } });
+  // Close the roster at its current size, then poke the parent's poll so this
+  // device re-evaluates (and likely starts generating) immediately instead of
+  // waiting out the lazy async polling interval.
+  const startNow = () => patchSession(session.id, { set: { expectedCount: joined } }).then(() => onAction?.());
 
   return (
     <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:10 }}>
@@ -1900,8 +1908,11 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
       : [...prev, code]
   );
 
-  // Poll for updates and movie readiness (adaptive cadence — fewer reads while idle).
-  useAdaptivePoll(session.id, (s) => {
+  // Poll for updates and movie readiness. Plan-ahead sessions poll LAZILY (30–60s):
+  // their waiting screens sit open for hours-to-days and nobody is watching live —
+  // this is the single biggest request-volume knob. Reopening the tab or submitting
+  // still refreshes instantly (visibilitychange handler / poke()).
+  const poke = useAdaptivePoll(session.id, (s) => {
     const generateAndAdvance = (sess) => {
       if (generatingRef.current) return;
       generatingRef.current = true;
@@ -1961,7 +1972,7 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
     } else if (s.adminId === userId) {
       if (allDone) generateAndAdvance(s);
     }
-  });
+  }, session.asyncMode ? { min: 30000, max: 60000 } : undefined);
 
   // Live mode: admin can only confirm once all other participants have submitted,
   // so the admin's full-session write lands last on a settled base (race avoidance).
@@ -1983,7 +1994,7 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
       submittedRef.current = true;
       setSubmitted(true);
       patchSession(session.id, isAdmin ? { participant: myPatch, criteria: adminCriteria } : { participant: myPatch })
-        .then(s => { if (s) { submittedDataRef.current = s; setLatestSession(s); } });
+        .then(s => { if (s) { submittedDataRef.current = s; setLatestSession(s); } poke(); });
       return;
     }
 
@@ -2029,7 +2040,7 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
             </div>
           ))}
         </div>
-        {latestSession.asyncMode && !(allDone && rosterFull) && <AsyncWaitingExtras session={latestSession} userId={userId} />}
+        {latestSession.asyncMode && !(allDone && rosterFull) && <AsyncWaitingExtras session={latestSession} userId={userId} onAction={poke} />}
         {allDone && rosterFull && <div style={{ color: C.muted, fontSize: 13 }}>Generating movie list…</div>}
       </div>
     );
@@ -3634,8 +3645,9 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
     setVetoes(prev => prev.includes(c) ? prev.filter(x => x !== c) : prev.length < MAX_VETOES ? [...prev, c] : prev);
   };
 
-  // Poll for readiness (adaptive cadence); the admin generates the deck once everyone has submitted.
-  useAdaptivePoll(session.id, (s) => {
+  // Poll for readiness. Plan-ahead sessions poll lazily (30–60s) — see the movie
+  // prefs screen for the reasoning; poke() covers the instant-refresh cases.
+  const poke = useAdaptivePoll(session.id, (s) => {
     const generateAndAdvance = (sess) => {
       if (generatingRef.current) return;
       generatingRef.current = true;
@@ -3681,7 +3693,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
     } else if (s.adminId === userId) {
       if (allDone) generateAndAdvance(s);
     }
-  });
+  }, session.asyncMode ? { min: 30000, max: 60000 } : undefined);
 
   // Live mode: admin confirms last (button gated until others are done) so its
   // criteria write lands on a settled base. Plan-ahead inverts this — admin goes
@@ -3713,7 +3725,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
       setSubmitted(true);
       rememberZip();
       patchSession(session.id, isAdmin ? { participant: myPatch, criteria: adminCriteria } : { participant: myPatch })
-        .then(s => { if (s) { submittedDataRef.current = s; setLatestSession(s); } });
+        .then(s => { if (s) { submittedDataRef.current = s; setLatestSession(s); } poke(); });
       return;
     }
 
@@ -3758,7 +3770,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
             </div>
           ))}
         </div>
-        {latestSession.asyncMode && !(allDone && rosterFull) && <AsyncWaitingExtras session={latestSession} userId={userId} />}
+        {latestSession.asyncMode && !(allDone && rosterFull) && <AsyncWaitingExtras session={latestSession} userId={userId} onAction={poke} />}
         {allDone && rosterFull && !genError && <div style={{ color:C.muted, fontSize:13 }}>Finding restaurants…</div>}
         {genError && <div style={{ color:C.red, fontSize:13, background:C.redSoft, borderRadius:8, padding:"10px 14px", textAlign:"center" }}>{genError}</div>}
       </div>

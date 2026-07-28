@@ -94,7 +94,9 @@ pausing for confirmation. Per change:
 - **Cloudflare KV is eventually consistent (~60s)** — that's why sessions use a DO.
   A DO read-modify-write is only atomic if wrapped in `blockConcurrencyWhile`.
 - **TMDB key must be the v3 key** (32-hex, `?api_key=`), NOT the v4 Bearer token.
-- **OMDb** free tier = 1,000 req/day; keys require email activation.
+- **OMDb** free tier = 1,000 req/day; keys require email activation. Enrichment is
+  cached in KV (`omdb:<imdb_id>`, 14d), so the daily budget only pays for movies
+  not seen recently.
 - `wrangler secret put NAME` reads the value (interactive/piped) and auto-redeploys.
 - iOS caches home-screen icons (re-add the bookmark to refresh).
 - Playwright: `form_input` can bypass React `onChange` — use real keystrokes; test
