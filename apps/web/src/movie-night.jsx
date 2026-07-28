@@ -2384,18 +2384,41 @@ function JoinScreen({ session, userId, userName, setUserName, onJoined, onSessio
     });
   };
 
+  // Two arrival modes. "Invited": the session is already known (tapped a link or
+  // scanned a QR) — the code is fixed, so show a personal invite ("Join Alex's
+  // session") and only ask for a name. "Manual": came via Enter Code — show the
+  // editable code field with the from-the-host's-screen instruction.
+  const invited = !!session?.id;
+  const host = session?.participants?.find(p => p.id === session.adminId)?.name;
+  const isFood = session?.activity === ACTIVITIES.FOOD;
+
   return (
     <div style={{ paddingTop:40, display:"flex", flexDirection:"column", gap:20 }}>
       <div style={{ textAlign:"center", marginBottom:8 }}>
         <div style={{ marginBottom:6 }}><Ico name="link" size={38} color={C.accent} stroke={1.5} /></div>
-        <p style={{ color:C.muted, margin:"8px 0 0" }}>Enter the session code from the host's screen</p>
+        {invited ? (
+          <>
+            <h2 style={{ margin:"4px 0 0", fontSize:22 }}>{host ? `Join ${host}'s session` : "Join the session"}</h2>
+            <p style={{ color:C.muted, margin:"8px 0 0", fontSize:14, lineHeight:1.5 }}>
+              {host ? `${host} wants` : "Your group wants"} your picks for {isFood ? "where to eat" : "what to watch"}.
+              {session?.asyncMode ? " Answer whenever works for you." : ""}
+            </p>
+            <div style={{ marginTop:10, fontSize:13, color:C.muted }}>
+              Session <span style={{ fontFamily:"monospace", letterSpacing:3, fontWeight:700, color:C.text }}>{session.id}</span>
+            </div>
+          </>
+        ) : (
+          <p style={{ color:C.muted, margin:"8px 0 0" }}>Enter the session code from the host's screen</p>
+        )}
       </div>
       <Field label="Your Name" required>
         <input value={localName} onChange={e=>setLocalName(e.target.value)} placeholder="e.g. Jordan" style={inputStyle} />
       </Field>
-      <Field label="Session Code" required>
-        <input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="e.g. AB12CD" maxLength={6} style={{ ...inputStyle, fontFamily:"monospace", fontSize:22, letterSpacing:6, textAlign:"center" }} />
-      </Field>
+      {!invited && (
+        <Field label="Session Code" required>
+          <input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="e.g. AB12CD" maxLength={6} style={{ ...inputStyle, fontFamily:"monospace", fontSize:22, letterSpacing:6, textAlign:"center" }} />
+        </Field>
+      )}
       {error && <div style={{ color:C.red, fontSize:13, background:C.redSoft, borderRadius:8, padding:"10px 14px" }}>{error}</div>}
       <Btn onClick={join} big disabled={joining}>{joining ? "Joining…" : "Join Session →"}</Btn>
     </div>
