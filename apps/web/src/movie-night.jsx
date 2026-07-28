@@ -105,7 +105,17 @@ function useStorage(key, init) {
 // Persisted across tabs/sessions — used for the optional email identity
 function useLocalStorage(key, init) {
   const [val, setVal] = useState(() => {
-    try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : (typeof init === "function" ? init() : init); } catch { return typeof init === "function" ? init() : init; }
+    try {
+      const s = localStorage.getItem(key);
+      if (s) return JSON.parse(s);
+      // Persist the computed initial value immediately. Without this, lazily
+      // generated values (like the device's mn_userid) lived only in React state
+      // and every reload minted a new one — which silently broke "come back
+      // later" continuity for plan-ahead sessions.
+      const v = typeof init === "function" ? init() : init;
+      if (v !== null && v !== undefined) localStorage.setItem(key, JSON.stringify(v));
+      return v;
+    } catch { return typeof init === "function" ? init() : init; }
   });
   const set = useCallback(v => {
     setVal(prev => {
@@ -191,16 +201,38 @@ async function putSession(session) {
 // the whole session. Used for joining and for submitting swipe votes — the two
 // paths most likely to run concurrently across devices. Returns the updated
 // session, or null on failure.
-async function patchParticipant(sessionId, participant) {
+// Generic atomic partial update — accepts { participant?, criteria?, set? } and the
+// Durable Object merges them under a lock, so concurrent writers can't clobber each
+// other. `set` is allowlisted server-side (deck + roster fields only).
+async function patchSession(sessionId, body) {
   try {
     const res = await fetch(`${TMDB_PROXY}/session/${sessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ participant }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) return null;
     return await res.json();
   } catch { return null; }
+}
+
+async function patchParticipant(sessionId, participant) {
+  return patchSession(sessionId, { participant });
+}
+
+// Atomically claim a named lock on the session (held 120s). Used so that when
+// several devices simultaneously notice "everyone's done — deck needed", exactly
+// one of them runs the expensive generation step.
+async function claimSessionLock(sessionId, name) {
+  try {
+    const res = await fetch(`${TMDB_PROXY}/session/${sessionId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claim: name }),
+    });
+    if (!res.ok) return false;
+    return (await res.json()).claimed === true;
+  } catch { return false; }
 }
 
 // Adaptive polling: fetch the session and run `onData(s)` for every result, but
@@ -735,6 +767,8 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
 export default function MovieNightApp() {
   const [screen, setScreen] = useStorage("mn_screen", "home");
   const [session, setSession] = useStorage("mn_session", null);
+  // Which activity the SetupScreen should create (set by the NetPix/FoodPix create buttons)
+  const [setupActivity, setSetupActivity] = useStorage("mn_setupactivity", ACTIVITIES.MOVIES);
   // userId & userName live in localStorage so they survive PWA force-quit
   // (sessionStorage clears on close, which led to admins losing their admin
   // status when they reopened the app and rejoined their own session).
@@ -763,15 +797,19 @@ export default function MovieNightApp() {
     const nameToUse = profile?.displayName?.trim() || userName?.trim();
     if (nameToUse) {
       const alreadyIn = s.participants?.some(p => p.id === userId);
+      let joined = s;
       if (alreadyIn) {
         // Don't re-add (would reset our votes/prefs) — just adopt the fresh copy.
         setSession(s);
       } else {
         const me = { id: userId, name: nameToUse, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
         const updated = await patchParticipant(sid, me);
-        setSession(updated || { ...s, participants: [...(s.participants || []), me] });
+        joined = updated || { ...s, participants: [...(s.participants || []), me] };
+        setSession(joined);
       }
-      setScreen("lobby");
+      // Live sessions → lobby; plan-ahead sessions → straight to wherever this
+      // participant left off (prefs / swiping / results).
+      routeIntoSession(joined);
     } else {
       setSession(s);
       setScreen("join");
@@ -808,64 +846,27 @@ export default function MovieNightApp() {
 
   const goHome = () => { setScreen("home"); setSession(null); };
 
-  // Create a movie-night session without going through the SetupScreen. Used as
-  // the fast path on the home button when we already know who the user is
-  // (signed-in displayName, or a userName from a past session).
-  const createAndEnterSession = async (name) => {
-    if (setUserName) setUserName(name);
-    const sid = generateSessionCode();
-    const newSession = {
-      id: sid,
-      adminId: userId,
-      activity: ACTIVITIES.MOVIES,
-      participants: [{ id: userId, name, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false }],
-      criteria: { services: [], subscriptionOnly: false, duration: null, languages: ["en"] },
-      movies: [],
-      started: false,
-      round: 1,
-    };
-    await putSession(newSession);
-    setSession(newSession);
-    setScreen("lobby");
+  // Route a device into the right screen for a session it just created/joined/re-opened.
+  // Live sessions go through the lobby (share link, wait, admin starts). Plan-ahead
+  // (async) sessions have no live "start" moment — drop the participant straight into
+  // wherever they left off: preferences, swiping, or results.
+  const routeIntoSession = (s) => {
+    if (!s?.asyncMode) { setScreen("lobby"); return; }
+    const isFood = s.activity === ACTIVITIES.FOOD;
+    const me = s.participants?.find(p => p.id === userId);
+    const deckReady = isFood
+      ? (s.restaurants?.length > 0 || s.foodReady)
+      : (s.movies?.length > 0 || s.moviesGenerated);
+    if (me?.done) setScreen(isFood ? "foodresults" : "results");
+    else if (deckReady) setScreen(isFood ? "foodswiping" : "swiping");
+    else setScreen(isFood ? "foodprefs" : "prefs");
   };
 
-  // Movie Night start handler. Fast-paths to lobby if we know the user's name;
-  // falls through to Setup if not. Fun Questions doesn't go through here — it's
-  // a standalone, sessionless experience that launches directly into its screen.
-  const startMoviesSession = () => {
-    const nameToUse = profile?.displayName?.trim() || userName?.trim();
-    if (nameToUse) createAndEnterSession(nameToUse);
-    else setScreen("setup");
-  };
-
-  // Food Night session creation. Mirrors the movie path but with the food activity
-  // and an empty restaurants deck (the admin fills criteria on FoodPreferencesScreen).
-  const createAndEnterFoodSession = async (name) => {
-    if (setUserName) setUserName(name);
-    const sid = generateSessionCode();
-    const newSession = {
-      id: sid,
-      adminId: userId,
-      activity: ACTIVITIES.FOOD,
-      participants: [{ id: userId, name, votes: {}, done: false }],
-      criteria: {},
-      restaurants: [],
-      started: false,
-      round: 1,
-    };
-    await putSession(newSession);
-    setSession(newSession);
-    setScreen("lobby");
-  };
-  const startFoodSession = () => {
-    let nameToUse = profile?.displayName?.trim() || userName?.trim();
-    if (!nameToUse) {
-      const entered = (typeof window !== "undefined" && window.prompt("Your name?") || "").trim();
-      if (!entered) return;
-      nameToUse = entered;
-    }
-    createAndEnterFoodSession(nameToUse);
-  };
+  // Session creation for both activities goes through the SetupScreen (name +
+  // "together now" vs "plan ahead"). Bonding Questions doesn't come through here —
+  // it's a standalone, sessionless experience.
+  const startMoviesSession = () => { setSetupActivity(ACTIVITIES.MOVIES); setScreen("setup"); };
+  const startFoodSession = () => { setSetupActivity(ACTIVITIES.FOOD); setScreen("setup"); };
 
   const screens = {
     home: <HomeScreen
@@ -896,9 +897,10 @@ export default function MovieNightApp() {
         });
       }}
       onCancel={() => setScreen("home")} />,
-    setup: <SetupScreen userId={userId} userName={userName} setUserName={setUserName} onCreated={(s) => { syncSession(s); setScreen("lobby"); }} />,
+    setup: <SetupScreen userId={userId} userName={userName} setUserName={setUserName} activity={setupActivity}
+      onCreated={(s) => { syncSession(s); setScreen("lobby"); }} />,
     join: <JoinScreen session={session} userId={userId} userName={userName} setUserName={setUserName}
-      onJoined={(s) => { syncSession(s); setScreen("lobby"); }}
+      onJoined={(s) => { syncSession(s); routeIntoSession(s); }}
       onSessionLoad={(s) => syncSession(s)} />,
     lobby: <LobbyScreen session={session} userId={userId} onStarted={(s) => {
       syncSession(s);
@@ -1609,24 +1611,35 @@ function Stat({ label, value }) {
 }
 
 // ─── Setup Screen ─────────────────────────────────────────────────────────────
-function SetupScreen({ userId, userName, setUserName, onCreated }) {
+function SetupScreen({ userId, userName, setUserName, activity = ACTIVITIES.MOVIES, onCreated }) {
   // Initialize from the global userName (which the App effect pre-fills from the
   // signed-in profile's displayName). If empty, the user can still type a name.
   const [name, setName] = useState(userName || "");
+  // "now" = classic live session (lobby, everyone together). "ahead" = plan-ahead
+  // (async): the session starts immediately, friends open the link on their own
+  // time, and the deck generates once `expectedCount` people have answered.
+  const [when, setWhen] = useState("now");
+  const [headcount, setHeadcount] = useState(3);
 
   const create = () => {
     if (!name.trim()) return alert("Please enter your name");
     // Remember the name globally too so future sessions skip this step
     if (setUserName) setUserName(name.trim());
     const sid = generateSessionCode();
+    const isAhead = when === "ahead";
     const session = {
       id: sid,
       adminId: userId,
-      activity: ACTIVITIES.MOVIES,
+      activity,
       participants: [{ id: userId, name: name.trim(), votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false }],
-      criteria: { services: [], subscriptionOnly: false, duration: null, languages: ["en"] },
-      movies: [],
-      started: false,
+      criteria: activity === ACTIVITIES.MOVIES
+        ? { services: [], subscriptionOnly: false, duration: null, languages: ["en"] }
+        : {},
+      ...(activity === ACTIVITIES.MOVIES ? { movies: [] } : { restaurants: [] }),
+      // Plan-ahead sessions are "started" from birth — there's no live lobby moment;
+      // the link drops each friend straight into preferences whenever they open it.
+      started: isAhead,
+      ...(isAhead && { asyncMode: true, expectedCount: headcount }),
       round: 1,
     };
     putSession(session).then(() => onCreated(session));
@@ -1637,6 +1650,38 @@ function SetupScreen({ userId, userName, setUserName, onCreated }) {
       <Field label="Your Name" required>
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Alex" style={inputStyle} />
       </Field>
+
+      <Field label="When are you deciding?">
+        <div style={{ display:"flex", gap:8 }}>
+          {[{v:"now",l:"Together now"},{v:"ahead",l:"Plan ahead"}].map(opt => (
+            <button key={opt.v} onClick={() => setWhen(opt.v)}
+              style={{ flex:1, padding:"12px 8px", borderRadius:10, border:`1.5px solid ${when === opt.v ? C.accent : C.border}`, background:when === opt.v ? C.accentSoft : "transparent", color:when === opt.v ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
+              {opt.l}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize:11, color:C.muted, marginTop:6 }}>
+          {when === "now"
+            ? "Everyone's here — swipe together in real time."
+            : "Send the link and everyone answers on their own time. The session stays open for 7 days."}
+        </div>
+      </Field>
+
+      {when === "ahead" && (
+        <Field label="How many people total?">
+          <div style={{ display:"flex", gap:8 }}>
+            {[2,3,4,5,6,7,8].map(n => (
+              <button key={n} onClick={() => setHeadcount(n)}
+                style={{ flex:1, padding:"10px 4px", borderRadius:10, border:`1.5px solid ${headcount === n ? C.accent : C.border}`, background:headcount === n ? C.accentSoft : "transparent", color:headcount === n ? C.accent : C.text, cursor:"pointer", fontSize:14, fontWeight:700 }}>
+                {n}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize:11, color:C.muted, marginTop:6 }}>
+            Including you. Matching starts once this many people have answered — you can also start early.
+          </div>
+        </Field>
+      )}
 
       <Btn onClick={create} big>Create Session →</Btn>
     </div>
@@ -1728,7 +1773,17 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
         ))}
       </div>
 
-      {isAdmin ? (
+      {session.asyncMode ? (
+        <>
+          {/* Plan-ahead: no live start moment. The admin shares the link, then heads
+              into preferences whenever — friends do the same on their own time. */}
+          <div style={{ textAlign:"center", fontSize:12, color:C.muted }}>
+            Plan-ahead session · {session.participants?.length || 1} of {session.expectedCount || 2} in.
+            Friends can open the link anytime — matching starts once everyone's answered.
+          </div>
+          <Btn onClick={() => onStarted(session)} big>Fill out my preferences →</Btn>
+        </>
+      ) : isAdmin ? (
         <Btn onClick={startSession} big disabled={!session.participants?.length}>Start Session →</Btn>
       ) : (
         <div style={{ textAlign:"center", color:C.muted, padding:16, background:C.card, borderRadius:12, border:`1px solid ${C.border}` }}>
@@ -1738,6 +1793,50 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+// ─── Async waiting extras ─────────────────────────────────────────────────────
+// Shown under the "Waiting for everyone…" list in plan-ahead sessions: the invite
+// link (re-shareable from anywhere, since there's no live lobby moment), joined
+// vs expected count, and an admin-only escape hatch that closes the roster at its
+// current size so matching starts with whoever's in.
+function AsyncWaitingExtras({ session, userId }) {
+  const [copied, setCopied] = useState(false);
+  const sessionUrl = `${window.location.origin}${window.location.pathname}?session=${session?.id}`;
+  const joined = session?.participants?.length || 1;
+  const expected = session?.expectedCount || 2;
+  const isAdmin = session?.adminId === userId;
+
+  const copyUrl = () => {
+    navigator.clipboard.writeText(sessionUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const shareUrl = async () => {
+    const activityLabel = session?.activity === ACTIVITIES.FOOD ? "FoodPix" : "NetPix";
+    try {
+      if (canShare) await navigator.share({ title: "CouchPix", text: `Join my CouchPix ${activityLabel} session`, url: sessionUrl });
+      else copyUrl();
+    } catch (e) { if (e?.name !== "AbortError") copyUrl(); }
+  };
+  // Close the roster at its current size. The next poll on any device then sees
+  // "everyone answered + headcount met" and kicks off deck generation.
+  const startNow = () => patchSession(session.id, { set: { expectedCount: joined } });
+
+  return (
+    <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:10 }}>
+      <div style={{ textAlign:"center", fontSize:12, color:C.muted }}>
+        {joined} of {expected} in · the link works anytime — check back here for the results.
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        <input value={sessionUrl} readOnly style={{ ...inputStyle, flex:1, fontSize:12, color:C.muted }} />
+        <Btn onClick={copyUrl} outline>{copied ? "✓ Copied" : "Copy"}</Btn>
+      </div>
+      <Btn onClick={shareUrl} outline big><Ico name="share" size={15} style={{ marginRight:6, verticalAlign:-2 }} />Share invite link</Btn>
+      {isAdmin && joined >= 2 && joined < expected && (
+        <Btn onClick={startNow} big>Start now with {joined} people →</Btn>
+      )}
     </div>
   );
 }
@@ -1771,7 +1870,10 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
   const submittedDataRef = useRef(null); // stores the full session object we PUT, for self-healing
   const generatingRef = useRef(false); // prevent concurrent discover calls across adaptive polls
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  // Set true on mount, false on unmount. The setup half matters: under React
+  // StrictMode (dev) effects run setup→cleanup→setup, and a cleanup-only effect
+  // would latch the ref to false forever — silently discarding generated decks.
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [latestSession, setLatestSession] = useState(session);
 
   const MAX_VETOES = 1;
@@ -1805,12 +1907,13 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
       generatingRef.current = true;
       discoverMovies(sess).then(movies => {
         if (!mountedRef.current) return;
-        const updated = {
-          ...sess,
-          movies: movies.length ? movies : sess.movies,
-          moviesGenerated: true,
-        };
-        putSession(updated).then(() => { if (mountedRef.current) onMoviesReady(updated); });
+        const deck = movies.length ? movies : (sess.movies || []);
+        // Atomic top-level set (Durable Object merge) — deliberately doesn't touch
+        // participants, so a friend joining or submitting prefs mid-generation
+        // can't be clobbered by this write. Matters most in plan-ahead sessions
+        // where generation can overlap with late joins.
+        patchSession(sess.id, { set: { movies: deck, moviesGenerated: true } })
+          .then(updated => { if (mountedRef.current) onMoviesReady(updated || { ...sess, movies: deck, moviesGenerated: true }); });
       });
     };
 
@@ -1846,21 +1949,46 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
     if (s.movies?.length > 0) { onMoviesReady(s); return; }
     if (s.moviesGenerated) { onMoviesReady(s); return; }
 
-    if (s.adminId === userId) {
-      const allDone = s.participants.every(p => p.prefsDone);
+    const allDone = s.participants.every(p => p.prefsDone);
+    if (s.asyncMode) {
+      // Plan-ahead: ANY device may generate once the roster is full and everyone
+      // has answered — the admin might not reopen the app for days. The DO-side
+      // claim elects exactly one generator across concurrently-polling devices.
+      const rosterFull = (s.participants?.length || 0) >= (s.expectedCount || 2);
+      if (allDone && rosterFull && !generatingRef.current) {
+        claimSessionLock(session.id, "movies").then(ok => { if (ok) generateAndAdvance(s); });
+      }
+    } else if (s.adminId === userId) {
       if (allDone) generateAndAdvance(s);
     }
   });
 
-  // Admin can only confirm once all other participants have submitted their genres.
-  // This ensures admin's write always lands last on a settled KV base, eliminating
-  // the concurrent write race entirely.
-  const otherParticipantsDone = latestSession.participants
+  // Live mode: admin can only confirm once all other participants have submitted,
+  // so the admin's full-session write lands last on a settled base (race avoidance).
+  // Plan-ahead mode inverts this — the admin answers FIRST and leaves; their write
+  // goes through an atomic PATCH instead, so no ordering is needed.
+  const otherParticipantsDone = session.asyncMode ? true : (latestSession.participants
     ?.filter(p => p.id !== userId)
-    .every(p => p.prefsDone) ?? true; // true when solo (no others to wait for)
+    .every(p => p.prefsDone) ?? true); // true when solo (no others to wait for)
 
   const submit = () => {
     if (!genres.length) return alert("Please select at least one genre");
+    const myPatch = { id: userId, genres, vetoes, prefsDone: true };
+    const adminCriteria = { services, subscriptionOnly, duration, languages, yearFrom, yearTo, allowedRatings };
+
+    if (!isAdmin || session.asyncMode) {
+      // Atomic per-participant merge (plus criteria for the plan-ahead admin, who
+      // answers first and leaves) — the DO serializes it, so concurrent joins or
+      // submits can't clobber each other. Generation stays in the poll's single path.
+      submittedRef.current = true;
+      setSubmitted(true);
+      patchSession(session.id, isAdmin ? { participant: myPatch, criteria: adminCriteria } : { participant: myPatch })
+        .then(s => { if (s) { submittedDataRef.current = s; setLatestSession(s); } });
+      return;
+    }
+
+    // Live-mode admin confirms LAST onto a settled base (gate above), so the full
+    // PUT with criteria keeps its historical semantics.
     getSession(session.id).then(s => {
       if (!s) return;
       const updated = {
@@ -1868,21 +1996,20 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
         participants: s.participants.map(p =>
           p.id === userId ? { ...p, genres, vetoes, prefsDone: true } : p
         ),
-        criteria: isAdmin
-          ? { ...s.criteria, services, subscriptionOnly, duration, languages, yearFrom, yearTo, allowedRatings }
-          : s.criteria,
+        criteria: { ...s.criteria, ...adminCriteria },
       };
       submittedRef.current = true;
       submittedDataRef.current = updated; // store for self-healing if our write gets clobbered
       setSubmitted(true);
-      // Write our preferences to KV and let the poll handle movie generation.
-      // Generation must go through one path only (the poll's generateAndAdvance)
-      // so all participants read the exact same movie list from KV.
       putSession(updated).then(() => setLatestSession(updated));
     });
   };
 
   const allDone = latestSession.participants?.every(p => p.prefsDone);
+  // Plan-ahead: "everyone answered" only counts once the roster is full — all-done
+  // among 1 of 4 expected people isn't done.
+  const rosterFull = !latestSession.asyncMode
+    || (latestSession.participants?.length || 0) >= (latestSession.expectedCount || 2);
   const myEntry = latestSession.participants?.find(p => p.id === userId);
   const iAmDone = submitted || myEntry?.prefsDone;
 
@@ -1902,7 +2029,8 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
             </div>
           ))}
         </div>
-        {allDone && <div style={{ color: C.muted, fontSize: 13 }}>Generating movie list…</div>}
+        {latestSession.asyncMode && !(allDone && rosterFull) && <AsyncWaitingExtras session={latestSession} userId={userId} />}
+        {allDone && rosterFull && <div style={{ color: C.muted, fontSize: 13 }}>Generating movie list…</div>}
       </div>
     );
   }
@@ -3489,7 +3617,10 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   const submittedDataRef = useRef(null);
   const generatingRef = useRef(false); // prevent concurrent discover calls across adaptive polls
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  // Set true on mount, false on unmount. The setup half matters: under React
+  // StrictMode (dev) effects run setup→cleanup→setup, and a cleanup-only effect
+  // would latch the ref to false forever — silently discarding generated decks.
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [latestSession, setLatestSession] = useState(session);
   const [genError, setGenError] = useState("");
 
@@ -3517,8 +3648,10 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
             : "No restaurants matched. Try a wider distance, lower rating, or different cuisines/time.");
           return;
         }
-        const updated = { ...sess, restaurants: data.restaurants, foodReady: true };
-        putSession(updated).then(() => { if (mountedRef.current) onReady(updated); });
+        // Atomic top-level set — doesn't touch participants, so late joins or
+        // submits landing mid-generation survive (see the movie flow).
+        patchSession(sess.id, { set: { restaurants: data.restaurants, foodReady: true } })
+          .then(updated => { if (mountedRef.current) onReady(updated || { ...sess, restaurants: data.restaurants, foodReady: true }); });
       });
     };
 
@@ -3537,47 +3670,75 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
     }
     setLatestSession(s);
     if (s.restaurants?.length > 0 || s.foodReady) { onReady(s); return; }
-    if (s.adminId === userId) {
-      const allDone = s.participants.every(p => p.prefsDone);
+    const allDone = s.participants.every(p => p.prefsDone);
+    if (s.asyncMode) {
+      // Plan-ahead: any device may generate once the roster's full and everyone
+      // answered; the DO-side claim elects exactly one generator.
+      const rosterFull = (s.participants?.length || 0) >= (s.expectedCount || 2);
+      if (allDone && rosterFull && !generatingRef.current) {
+        claimSessionLock(session.id, "restaurants").then(ok => { if (ok) generateAndAdvance(s); });
+      }
+    } else if (s.adminId === userId) {
       if (allDone) generateAndAdvance(s);
     }
   });
 
-  // Admin confirms last (button gated until others are done) so its criteria write
-  // always lands on a settled base — same race-avoidance as the movie flow.
-  const otherParticipantsDone = latestSession.participants
-    ?.filter(p => p.id !== userId).every(p => p.prefsDone) ?? true;
+  // Live mode: admin confirms last (button gated until others are done) so its
+  // criteria write lands on a settled base. Plan-ahead inverts this — admin goes
+  // first via atomic PATCH, so no gate.
+  const otherParticipantsDone = session.asyncMode ? true : (latestSession.participants
+    ?.filter(p => p.id !== userId).every(p => p.prefsDone) ?? true);
 
   const submit = () => {
     if (!cuisines.length) return alert("Pick at least one cuisine");
     if (isAdmin && !/^\d{5}$/.test(zip.trim())) return alert("Enter a valid 5-digit ZIP code");
-    getSession(session.id).then(s => {
-      if (!s) return;
-      const criteria = isAdmin
-        ? { ...s.criteria, zip: zip.trim(), mode, minRating, distanceMi, allowedPrices,
-            when: when === "now" ? "now" : scheduledTime,
-            reservable, outdoorSeating, servesAlcohol, goodForGroups, vegetarian,
-            dogs, liveMusic, sports, dessert, kidsMenu, diningStyle }
-        : s.criteria;
-      const updated = {
-        ...s,
-        participants: s.participants.map(p =>
-          p.id === userId ? { ...p, cuisines, vetoCuisines: vetoes, prefsDone: true } : p
-        ),
-        criteria,
-      };
-      submittedRef.current = true;
-      submittedDataRef.current = updated;
-      setSubmitted(true);
+    const myPatch = { id: userId, cuisines, vetoCuisines: vetoes, prefsDone: true };
+    const adminCriteria = {
+      zip: zip.trim(), mode, minRating, distanceMi, allowedPrices,
+      when: when === "now" ? "now" : scheduledTime,
+      reservable, outdoorSeating, servesAlcohol, goodForGroups, vegetarian,
+      dogs, liveMusic, sports, dessert, kidsMenu, diningStyle,
+    };
+    const rememberZip = () => {
       if (isAdmin && profile?.userKey && zip.trim() !== profile.zip) {
         const up = { ...profile, zip: zip.trim() };
         setProfile(up); putProfile(profile.userKey, up);
       }
+    };
+
+    if (!isAdmin || session.asyncMode) {
+      // Atomic per-participant merge (+criteria for the plan-ahead admin, who goes
+      // first) — serialized in the DO, so nothing clobbers.
+      submittedRef.current = true;
+      setSubmitted(true);
+      rememberZip();
+      patchSession(session.id, isAdmin ? { participant: myPatch, criteria: adminCriteria } : { participant: myPatch })
+        .then(s => { if (s) { submittedDataRef.current = s; setLatestSession(s); } });
+      return;
+    }
+
+    // Live-mode admin confirms LAST onto a settled base (gate above) — keep the full PUT.
+    getSession(session.id).then(s => {
+      if (!s) return;
+      const updated = {
+        ...s,
+        participants: s.participants.map(p =>
+          p.id === userId ? { ...p, ...myPatch } : p
+        ),
+        criteria: { ...s.criteria, ...adminCriteria },
+      };
+      submittedRef.current = true;
+      submittedDataRef.current = updated;
+      setSubmitted(true);
+      rememberZip();
       putSession(updated).then(() => setLatestSession(updated));
     });
   };
 
   const allDone = latestSession.participants?.every(p => p.prefsDone);
+  // Plan-ahead: "everyone answered" only counts once the roster is full.
+  const rosterFull = !latestSession.asyncMode
+    || (latestSession.participants?.length || 0) >= (latestSession.expectedCount || 2);
   const myEntry = latestSession.participants?.find(p => p.id === userId);
   const iAmDone = submitted || myEntry?.prefsDone;
 
@@ -3597,7 +3758,8 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
             </div>
           ))}
         </div>
-        {allDone && !genError && <div style={{ color:C.muted, fontSize:13 }}>Finding restaurants…</div>}
+        {latestSession.asyncMode && !(allDone && rosterFull) && <AsyncWaitingExtras session={latestSession} userId={userId} />}
+        {allDone && rosterFull && !genError && <div style={{ color:C.muted, fontSize:13 }}>Finding restaurants…</div>}
         {genError && <div style={{ color:C.red, fontSize:13, background:C.redSoft, borderRadius:8, padding:"10px 14px", textAlign:"center" }}>{genError}</div>}
       </div>
     );

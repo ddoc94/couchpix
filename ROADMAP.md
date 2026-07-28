@@ -10,7 +10,9 @@ This is a living list — priorities and scope will evolve.
   discovery relevance, plus how finalists are ranked.
 - **Asynchronous sessions** — let a group decide ahead of time, separately and
   on their own schedule (e.g. "what should we do for dinner Thursday?"), instead
-  of everyone swiping live at the same moment.
+  of everyone swiping live at the same moment. *(v1 shipped: "Plan ahead" mode —
+  headcount roster, 7-day sessions, any-device deck generation. Still open:
+  notifications, late-flake escape hatches beyond "start now".)*
 
 ## P2
 

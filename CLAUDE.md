@@ -43,7 +43,16 @@ services/api/src/index.js   Cloudflare Worker                → Cloudflare
 ## Session model
 `{ id, adminId, activity, participants:[{ id, name, votes, done, genres, vetoes,
 passionPick, prefsDone, heart, cuisines }], criteria, movies|restaurants, started,
-round, heartPool, heartRound, foodReady, savedMovies }`. Codes match `[A-Z0-9]{4,10}`.
+round, heartPool, heartRound, foodReady, savedMovies, asyncMode, expectedCount,
+moviesGenerated }`. Codes match `[A-Z0-9]{4,10}`.
+
+**Plan-ahead (async) sessions** (`asyncMode: true`): created already-`started`; the
+link drops joiners straight into prefs (no lobby wait); admin answers FIRST via
+atomic PATCH (participant + criteria); deck generation triggers on ANY device once
+`participants.length >= expectedCount` and all `prefsDone` — a DO claim
+(`POST /session/:id` `{claim}`, 120s freshness) elects exactly one generator, which
+writes the deck via PATCH `set` (allowlisted top-level fields) so it can't clobber
+concurrent joins. Async TTL is 7 days (live sessions 24h).
 
 ## Results logic
 Winner + runners-up, ranked **hearts → rating → matched-criteria** (`rankFinalists`,
