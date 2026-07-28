@@ -1756,9 +1756,9 @@ function SetupScreen({ userId, userName, setUserName, activity = ACTIVITIES.MOVI
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Alex" style={inputStyle} />
       </Field>
 
-      <Field label="When are you deciding?">
+      <Field label="Are you together right now or swiping separately?">
         <div style={{ display:"flex", gap:8 }}>
-          {[{v:"now",l:"Together now"},{v:"ahead",l:"Plan ahead"}].map(opt => (
+          {[{v:"now",l:"Together"},{v:"ahead",l:"Separately"}].map(opt => (
             <button key={opt.v} onClick={() => setWhen(opt.v)}
               style={{ flex:1, padding:"12px 8px", borderRadius:10, border:`1.5px solid ${when === opt.v ? C.accent : C.border}`, background:when === opt.v ? C.accentSoft : "transparent", color:when === opt.v ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
               {opt.l}
@@ -1883,7 +1883,7 @@ function LobbyScreen({ session, userId, onStarted, onSync }) {
           {/* Plan-ahead: no live start moment. The admin shares the link, then heads
               into preferences whenever — friends do the same on their own time. */}
           <div style={{ textAlign:"center", fontSize:12, color:C.muted }}>
-            Plan-ahead session · {session.participants?.length || 1} of {session.expectedCount || 2} in.
+            Swiping separately · {session.participants?.length || 1} of {session.expectedCount || 2} in.
             Friends can open the link anytime — matching starts once everyone's answered.
           </div>
           <Btn onClick={() => onStarted(session)} big>Fill out my preferences →</Btn>
@@ -1950,6 +1950,35 @@ function AsyncWaitingExtras({ session, userId, onAction }) {
       {isAdmin && joined >= 2 && joined < expected && (
         <Btn onClick={startNow} outline big>Start now with {joined} people →</Btn>
       )}
+    </div>
+  );
+}
+
+// Context note at the top of a preferences screen. Two audiences:
+//  - the host of a "separately" session, who now answers FIRST and shares after,
+//    so the screen needs to read as "set up the session" rather than "your turn"
+//  - guests, who only ever pick genres/cuisines — testers were confused about
+//    where the rest of the criteria (streaming services, budget, location) came
+//    from, so name the host as the person who already set them.
+function PrefsIntroNote({ session, userId, activity }) {
+  const isAdmin = session?.adminId === userId;
+  const isFood = activity === ACTIVITIES.FOOD;
+  const hostSetup = isAdmin && session?.asyncMode;
+  if (isAdmin && !hostSetup) return null; // live host: nothing to explain
+
+  const host = session?.participants?.find(p => p.id === session.adminId)?.name;
+  const text = hostSetup
+    ? "Make selections below to set up the session. Then you can share it with friends."
+    : `${host || "The host"} already set the ${isFood ? "location, budget, and timing" : "streaming services, release years, and ratings"} for this session — just add your ${isFood ? "cuisines" : "genres"} below.`;
+
+  return (
+    <div style={{
+      display:"flex", alignItems:"flex-start", gap:10,
+      background:C.accentSoft, border:`1px solid ${C.accent}33`, borderRadius:12,
+      padding:"11px 13px", color:C.text,
+    }}>
+      <Ico name={hostSetup ? "pencil" : "user"} size={16} color={C.accent} style={{ marginTop:1 }} />
+      <span style={{ fontSize:13, lineHeight:1.5 }}>{text}</span>
     </div>
   );
 }
@@ -2214,6 +2243,8 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
         <div style={{ fontSize: 13, color: C.muted }}>What are you in the mood for?</div>
         <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Pick up to {maxGenres} genre{maxGenres > 1 ? "s" : ""}</div>
       </div>
+
+      <PrefsIntroNote session={session} userId={userId} activity={ACTIVITIES.MOVIES} />
 
       <Field label={`Genres (pick up to ${maxGenres})`} required>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -3104,6 +3135,9 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   const [heartPool, setHeartPool] = useState(null); // null = not yet determined
   const [myHeart, setMyHeart] = useState(null);
   const [heartRound, setHeartRound] = useState(1);
+  // The group can override the ranked winner by promoting a runner-up. Declared
+  // before any conditional return so hook order stays stable.
+  const [chosenId, setChosenId] = useState(null);
 
   // ── Poll KV for updates ──
   // heartPool and heartRound now live on the session (KV) rather than local state,
@@ -3131,10 +3165,15 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
       // into a >2 final that nobody narrowed.
       const agreedIds = movieAgreedPool(s).map(m => m.id);
 
-      if (agreedIds.length <= 2) { setPhase("final"); return; }
+      // Live: only worth hearting when >2 agreed (≤2 already reads as pick +
+      // runner-up). Swiping separately: hearting is MANDATORY whenever there's any
+      // choice at all (2+) — the group never gathers to talk it through, so the
+      // hearts ARE the conversation.
+      const needsHeart = s.asyncMode ? agreedIds.length >= 2 : agreedIds.length > 2;
+      if (!needsHeart) { setPhase("final"); return; }
 
-      // >2 agreed → every participant MUST heart one before we advance. Until then
-      // we stay in the heart phase (there is no skip), so the pool always narrows.
+      // Every participant MUST heart one before we advance. Until then we stay in
+      // the heart phase (there is no skip), so the pool always narrows.
       const allHeartDone = s.participants.every(p => p.heart !== undefined);
       if (!allHeartDone) {
         setPhase("heart");
@@ -3163,7 +3202,11 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
       // rather than infinite-looping. Each survivor becomes a top pick.
       const isStuck = survivors.length === pool.length;
 
-      if (survivors.length > 2 && !isStuck) {
+      // Swiping separately runs exactly ONE heart round — every extra round would
+      // cost another day of waiting for everyone to come back. Whatever survives is
+      // ranked (hearts → rating → matched genres) and crowned winner + runners-up,
+      // which the results screen lets the group override anyway.
+      if (!s.asyncMode && survivors.length > 2 && !isStuck) {
         // Still too many — start another heart round with just the survivors.
         // Persist the new heartPool/heartRound to KV so every device picks it up.
         const nextRound = (s.heartRound || 1) + 1;
@@ -3411,8 +3454,10 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   const heartCounts = {};
   yesMovies.forEach(m => { heartCounts[m.id] = participants.filter(p => p.heart === m.id).length; });
   const ranked = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres });
-  const winner = ranked[0];
-  const runnersUp = ranked.slice(1, 4);
+  // Top-ranked movie is the proposed pick, but the group can promote a runner-up
+  // instead — it becomes the featured card and the rest fall back to runners-up.
+  const winner = ranked.find(m => m.id === chosenId) || ranked[0];
+  const runnersUp = ranked.filter(m => m.id !== winner.id).slice(0, 3);
   const finalMovies = ranked; // saveForLater() looks movies up here
 
   // (auto-save effect lives near the top of the component, before conditional returns,
@@ -3592,9 +3637,15 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
                   <span style={{ color:C.red, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="tomato" size={12} /> {movie.rt}%</span>
                   {(heartCounts[movie.id] ?? 0) > 0 && <span style={{ color:C.accent, fontWeight:700 }}>♥ {heartCounts[movie.id]}</span>}
                 </div>
-                {/* Same watch/save controls as the winner, so a runner-up can be
-                    chosen instead of the top pick. */}
-                {watchButtons(movie)}
+                {/* Promote a runner-up to tonight's pick. Works signed-out too
+                    (async sessions are anonymous by design); when signed in it
+                    also records the watch status, same as the winner's button. */}
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
+                  <button
+                    onClick={() => { setChosenId(movie.id); if (profile?.userKey) setWatchStatus(movie.id, "watched"); }}
+                    style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.muted, borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, cursor:"pointer" }}
+                  >We're watching this →</button>
+                </div>
               </div>
             </div>
           ))}
@@ -3912,6 +3963,8 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
         <h2 style={{ margin:"6px 0 0", fontSize:22 }}>What are you craving?</h2>
       </div>
 
+      <PrefsIntroNote session={session} userId={userId} activity={ACTIVITIES.FOOD} />
+
       {isAdmin && (
         <>
           <Field label="How do you want to eat?">
@@ -4220,6 +4273,10 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   const [heartPool, setHeartPool] = useState(null);
   const [myHeart, setMyHeart] = useState(null);
   const [heartRound, setHeartRound] = useState(1);
+  // The group can override the ranked winner by promoting a runner-up ("We're
+  // going here"). Declared up here so hook order stays stable across the
+  // waiting/heart/final returns below.
+  const [chosenId, setChosenId] = useState(null);
   const navedRef = useRef(false); // ensure we navigate to a new round only once
 
   // Poll KV. heartPool/heartRound live on the session so every device shares the
@@ -4246,7 +4303,10 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     if (!allSwipeDone) { setPhase("waiting"); return; }
 
     const agreedIds = foodAgreedPool(s).map(r => r.id);
-    if (agreedIds.length <= 2) { setPhase("final"); return; }
+    // Swiping separately: hearting is mandatory whenever there's a choice (2+) —
+    // see the movie flow for the reasoning.
+    const needsHeart = s.asyncMode ? agreedIds.length >= 2 : agreedIds.length > 2;
+    if (!needsHeart) { setPhase("final"); return; }
 
     const allHeartDone = s.participants.every(p => p.heart !== undefined);
     if (!allHeartDone) {
@@ -4266,7 +4326,8 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     const survivors = pool.filter(id => (counts[id] ?? 0) === max && max > 0);
     const isStuck = survivors.length === pool.length;
 
-    if (survivors.length > 2 && !isStuck) {
+    // One heart round only when swiping separately (extra rounds = extra days).
+    if (!s.asyncMode && survivors.length > 2 && !isStuck) {
       const nextRound = (s.heartRound || 1) + 1;
       const resetSession = { ...s, heartPool: survivors, heartRound: nextRound, participants: s.participants.map(p => ({ ...p, heart: undefined })) };
       putSession(resetSession).then(() => { setLatest(resetSession); setHeartPool(survivors); setMyHeart(null); setHeartRound(nextRound); setPhase("heart"); });
@@ -4387,8 +4448,11 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   // Rank the agreed spots — most hearts, then higher rating, then most matched
   // cuisines — and crown the top one, listing the rest below as runners-up.
   const ranked = rankFinalists(agreed, participants, { ratingOf: r => r.rating, tagsOf: r => r.matchedCuisines, pickedOf: p => p.cuisines });
-  const winner = ranked[0];
-  const runnersUp = ranked.slice(1, 4);
+  // Top-ranked spot is the proposed pick, but the group can promote a runner-up
+  // instead — whichever is chosen becomes the featured card and the rest drop back
+  // into the runners-up list.
+  const winner = ranked.find(r => r.id === chosenId) || ranked[0];
+  const runnersUp = ranked.filter(r => r.id !== winner.id).slice(0, 3);
 
   return (
     <div style={{ paddingTop:16, display:"flex", flexDirection:"column", gap:16, paddingBottom:40 }}>
@@ -4406,14 +4470,26 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
           {runnersUp.map(r => {
             const hearts = participants.filter(p => p.heart === r.id).length;
             return (
-              <a key={r.id} href={r.mapsUri || "#"} target="_blank" rel="noopener noreferrer"
-                style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8, textDecoration:"none" }}>
+              <div key={r.id}
+                style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:10, marginBottom:8 }}>
                 <Thumb src={r.photo} icon="plate" w={54} h={54} radius={8} fontSize={24} />
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontWeight:700, fontSize:14, color:C.text }}>{r.name}</div>
                   <div style={{ fontSize:12, color:C.muted }}><Ico name="star" size={11} filled color={C.gold} style={{ marginRight:3 }} />{r.rating} · {r.distanceMi} mi{hearts ? ` · ♥ ${hearts}` : ""}</div>
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:7 }}>
+                    <button
+                      onClick={() => setChosenId(r.id)}
+                      style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.muted, borderRadius:8, padding:"5px 9px", fontSize:11, fontWeight:700, cursor:"pointer" }}
+                    >We're going here →</button>
+                    {(r.website || r.mapsUri) && (
+                      <a href={r.website || r.mapsUri} target="_blank" rel="noopener noreferrer"
+                        style={{ display:"inline-flex", alignItems:"center", gap:4, border:`1px solid ${C.border}`, color:C.muted, borderRadius:8, padding:"5px 9px", fontSize:11, fontWeight:700, textDecoration:"none" }}>
+                        <Ico name="menu" size={11} /> Menu
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </a>
+              </div>
             );
           })}
         </div>
