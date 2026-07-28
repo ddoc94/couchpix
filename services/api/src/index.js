@@ -2,7 +2,8 @@
 // read from `env` inside fetch() — never hardcode API keys in source.
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
-const SESSION_TTL = 60 * 60 * 24;          // 24 hours
+const SESSION_TTL = 60 * 60 * 24;          // 24 hours (live "decide together now" sessions)
+const ASYNC_SESSION_TTL = 60 * 60 * 24 * 7; // 7 days (plan-ahead sessions filled out over days)
 const PROFILE_TTL = 60 * 60 * 24 * 90;     // 90 days — sliding window, refreshed on each write
 const MAX_BODY_BYTES = 512 * 1024;         // cap on a stored session/profile blob (~10x real size)
 
@@ -119,8 +120,9 @@ export default {
     const sessionMatch = url.pathname.match(/^\/session\/([A-Z0-9]{4,10})$/i);
     if (sessionMatch) {
       const id = sessionMatch[1].toUpperCase();
-      // GET (read) / PUT (full write) / PATCH (atomic single-participant merge).
-      if (!["GET", "PUT", "PATCH"].includes(request.method)) {
+      // GET (read) / PUT (full write) / PATCH (atomic partial merge) /
+      // POST (atomic named claim — used to elect one device for deck generation).
+      if (!["GET", "PUT", "PATCH", "POST"].includes(request.method)) {
         return json({ error: "method not allowed" }, 405);
       }
       const stub = env.SESSION_ROOM.get(env.SESSION_ROOM.idFromName(id));
@@ -636,6 +638,11 @@ export class SessionRoom {
     this.state = state;
   }
 
+  // Plan-ahead (async) sessions live for 7 days; live sessions for 24h.
+  ttlMsFor(session) {
+    return (session && session.asyncMode ? ASYNC_SESSION_TTL : SESSION_TTL) * 1000;
+  }
+
   async fetch(request) {
     if (request.method === "GET") {
       const val = await this.state.storage.get("data");
@@ -647,20 +654,56 @@ export class SessionRoom {
       const bad = badBody(body);
       if (bad) return bad;
       await this.state.storage.put("data", body);
-      await this.state.storage.setAlarm(Date.now() + SESSION_TTL * 1000);
+      let parsed = null;
+      try { parsed = JSON.parse(body); } catch {}
+      await this.state.storage.setAlarm(Date.now() + this.ttlMsFor(parsed));
       return json({ ok: true });
     }
-    // PATCH { participant: {id, ...fields} } — atomically upsert ONE participant
-    // (add if new, else shallow-merge the given fields). The read-modify-write is
-    // wrapped in blockConcurrencyWhile so overlapping PATCHes serialize and can't
-    // clobber each other the way a client GET-modify-PUT of the whole blob did.
+    // POST { claim: "<name>" } — atomically claim a named lock (e.g. deck generation)
+    // so exactly ONE device runs the expensive step even when several poll the same
+    // "everyone's done" state at once. The claim lives in its own storage key (NOT the
+    // session blob) so a client PUT of the session can never clobber it. A claim goes
+    // stale after 120s, so a device that died mid-generate doesn't wedge the session.
+    if (request.method === "POST") {
+      const raw = await request.text();
+      const bad = badBody(raw);
+      if (bad) return bad;
+      const name = (JSON.parse(raw) || {}).claim;
+      if (typeof name !== "string" || !/^[a-z]{1,24}$/i.test(name)) {
+        return json({ error: "claim name required" }, 400);
+      }
+      let claimed = false, exists = true;
+      await this.state.blockConcurrencyWhile(async () => {
+        const data = await this.state.storage.get("data");
+        if (!data) { exists = false; return; }
+        const key = `claim:${name.toLowerCase()}`;
+        const prev = await this.state.storage.get(key);
+        if (prev && Date.now() - prev < 120 * 1000) return; // held & fresh — denied
+        await this.state.storage.put(key, Date.now());
+        claimed = true;
+      });
+      if (!exists) return json({ error: "not found" }, 404);
+      return json({ claimed });
+    }
+    // PATCH — atomic partial update of the session, wrapped in blockConcurrencyWhile
+    // so overlapping writers serialize instead of clobbering each other. Accepts any
+    // combination of:
+    //   participant: {id, ...fields} — upsert ONE participant (add, else shallow-merge)
+    //   criteria:    {...fields}     — shallow-merge into session.criteria (admin writes)
+    //   set:         {...fields}     — top-level sets, allowlisted (deck-generation and
+    //                                  roster fields only, so clients can't overwrite
+    //                                  arbitrary session state through this door)
     if (request.method === "PATCH") {
       const raw = await request.text();
       const bad = badBody(raw);
       if (bad) return bad;
       const patch = JSON.parse(raw); // badBody already validated it parses
       const p = patch && patch.participant;
-      if (!p || !p.id) return json({ error: "participant.id required" }, 400);
+      const crit = patch && patch.criteria;
+      const set = patch && patch.set;
+      const SETTABLE = ["expectedCount", "movies", "moviesGenerated", "restaurants", "foodReady"];
+      if (p && !p.id) return json({ error: "participant.id required" }, 400);
+      if (!p && !crit && !set) return json({ error: "nothing to patch" }, 400);
 
       let status = 200, out = null;
       await this.state.blockConcurrencyWhile(async () => {
@@ -668,13 +711,21 @@ export class SessionRoom {
         if (!raw) { status = 404; return; }
         let session;
         try { session = JSON.parse(raw); } catch { status = 500; return; }
-        if (!Array.isArray(session.participants)) session.participants = [];
-        const i = session.participants.findIndex(x => x.id === p.id);
-        if (i === -1) session.participants.push(p);
-        else session.participants[i] = { ...session.participants[i], ...p };
+        if (p) {
+          if (!Array.isArray(session.participants)) session.participants = [];
+          const i = session.participants.findIndex(x => x.id === p.id);
+          if (i === -1) session.participants.push(p);
+          else session.participants[i] = { ...session.participants[i], ...p };
+        }
+        if (crit && typeof crit === "object") {
+          session.criteria = { ...(session.criteria || {}), ...crit };
+        }
+        if (set && typeof set === "object") {
+          for (const k of SETTABLE) if (k in set) session[k] = set[k];
+        }
         out = JSON.stringify(session);
         await this.state.storage.put("data", out);
-        await this.state.storage.setAlarm(Date.now() + SESSION_TTL * 1000);
+        await this.state.storage.setAlarm(Date.now() + this.ttlMsFor(session));
       });
 
       if (status === 404) return json({ error: "not found" }, 404);
