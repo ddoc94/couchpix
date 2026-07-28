@@ -7,11 +7,16 @@ production.
 
 ## What it is
 A group decision app: swipe with friends to pick a **movie** (**NetPix**) or
-**takeout** (**FoodPix**), plus a local party game **Bonding Questions**. Shared
-session code → everyone swipes → picks are tallied into a winner + runners-up.
+somewhere to eat (**FoodPix** — dine-in, delivery, or takeout). Shared session
+code/link → everyone swipes → picks are tallied into a winner + runners-up.
+Sessions run **together** (live) or **separately** (async, see below).
+A local party game **Bonding Questions** still exists in the code but is no
+longer linked from home.
 
-- Live: https://netpix-app.vercel.app
+- Live: **https://couchpix.com** (apex; `www` 308s to it). The legacy
+  `netpix-app.vercel.app` 308s to couchpix.com too, via `apps/web/vercel.json`.
 - Worker: https://netpix-proxy.netpix2026.workers.dev
+- Analytics: GA4 `G-G7QGK5CN1J` (gtag in `apps/web/index.html`).
 
 ## Layout (monorepo)
 ```
@@ -27,18 +32,34 @@ services/api/src/index.js   Cloudflare Worker                → Cloudflare
 
 ## Architecture
 - **Frontend:** one big `movie-night.jsx`; screens driven by a `screen` state
-  string; palette object `C`; logo is a raster `public/logo.png`.
+  string; palette object `C`; type constants `FONT`/`SERIF`; line icons via the
+  `<Ico>` component + `ICON_PATHS` (no emoji in UI — deliberate). Logo is
+  `public/logo.svg` (vector-traced from the owner's art); `public/logo.png` is
+  the raster master the PWA icon script builds from.
 - **Worker (`netpix-proxy`):**
   - **Sessions → Durable Object** `SessionRoom` (SQLite-backed, strongly consistent).
     `GET/PUT/PATCH /session/:id`. **PATCH** = atomic per-participant merge wrapped in
     `blockConcurrencyWhile` (used by join + vote-submit to avoid lost-update races).
   - **Profiles → KV** (`SESSIONS`): `/user/:hash`.
-  - Discovery: `/discover` (TMDB) + OMDb enrichment, `/videos`, `/restaurants`
-    (Google Places, capped to 10, tagged `matchedCuisines`).
+  - **`/discover`** (TMDB) + OMDb enrichment (cached in KV, see Gotchas), `/videos`.
+    Tuned to favor films people recognize: `vote_count.gte` 800 (falls back to 300
+    if a narrow query would starve), a 70-min runtime floor, 45% of sessions sort by
+    popularity. Sequels are pushed back — confirmed numbered/part sequels sort to the
+    very end, franchise members get a strong random penalty (`isLikelySequel`).
+  - **`/restaurants`** (Google Places New). `mode=dine_in|delivery|takeout`; dine-in
+    accepts optional filters (`reservable, outdoorSeating, alcohol, goodForGroups,
+    vegetarian, dogs, liveMusic, sports, dessert, kidsMenu, diningStyle=casual|formal`)
+    which exclude only places Google explicitly marks as lacking the attribute, so
+    sparse data doesn't empty the deck. Deck is **round-robin balanced across the
+    picked cuisines** (a global top-10 by rating let one cuisine crowd out the rest),
+    capped at 10, tagged `matchedCuisines`. Search results cache 6h under `food5:`
+    — **bump that prefix whenever the field mask changes.**
   - **API keys are Worker secrets** (`TMDB_KEY` v3, `OMDB_KEY`, `GOOGLE_PLACES_KEY`) —
     read from `env`, NEVER hardcode. Writes go through `badBody()` (≤512KB, valid JSON).
-- Client polls sessions via `useAdaptivePoll` (2–8s; lobby capped at 3s).
-- Mobile OTA-loads the Vercel URL, so a web deploy reaches phones (no App Store push).
+- Client polls sessions via `useAdaptivePoll` (2–8s; lobby capped at 3s; **async
+  prefs/waiting screens 30–60s** since nobody's watching live — the hook returns a
+  `poke()` for instant refresh after a write).
+- Mobile OTA-loads couchpix.com, so a web deploy reaches phones (no App Store push).
 
 ## Session model
 `{ id, adminId, activity, participants:[{ id, name, votes, done, genres, vetoes,
@@ -68,9 +89,13 @@ Either way the group can **promote a runner-up** to tonight's pick; the choice i
 stored on the session (`chosenId`, via PATCH `set`) so everyone sees the same pick,
 and it works signed-out.
 
-## Palette `C`
-bg `#f4f7fa` · card `#fff` · border `#dde6ef` · accent `#2563eb` · gold `#f59e0b` ·
-text `#0f172a` · muted `#64748b` · green `#059669` · red `#dc2626`.
+## Palette `C` — "Matinee" (editorial daylight)
+bg `#F3F2EF` (cool porcelain) · card `#fff` · border `#E4E2DC` (warm hairline) ·
+accent `#2A3A5C` (deep ink-blue) · gold `#B0872F` (brass) · text `#1C222E` ·
+muted `#727A88` · green `#3F6045` (forest) · red `#8C3A34` (brick).
+Semantic colors are deliberately muted, not alarm-bright. Type: one sans (`FONT`)
+for UI, serif (`SERIF`) reserved for the *Pix wordmarks, monospace only for
+session codes.
 
 ## Workflow (owner wants the FULL pipeline, no asking)
 Standing instruction: commit → push → open PR → **squash-merge** → deploy, without
