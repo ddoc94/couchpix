@@ -703,9 +703,9 @@ export class SessionRoom {
     // combination of:
     //   participant: {id, ...fields} — upsert ONE participant (add, else shallow-merge)
     //   criteria:    {...fields}     — shallow-merge into session.criteria (admin writes)
-    //   set:         {...fields}     — top-level sets, allowlisted (deck-generation and
-    //                                  roster fields only, so clients can't overwrite
-    //                                  arbitrary session state through this door)
+    //   set:         {...fields}     — top-level sets, allowlisted (deck-generation,
+    //                                  roster and final-pick fields only, so clients
+    //                                  can't overwrite arbitrary session state here)
     if (request.method === "PATCH") {
       const raw = await request.text();
       const bad = badBody(raw);
@@ -714,7 +714,7 @@ export class SessionRoom {
       const p = patch && patch.participant;
       const crit = patch && patch.criteria;
       const set = patch && patch.set;
-      const SETTABLE = ["expectedCount", "movies", "moviesGenerated", "restaurants", "foodReady"];
+      const SETTABLE = ["expectedCount", "movies", "moviesGenerated", "restaurants", "foodReady", "chosenId"];
       if (p && !p.id) return json({ error: "participant.id required" }, 400);
       if (!p && !crit && !set) return json({ error: "nothing to patch" }, 400);
 

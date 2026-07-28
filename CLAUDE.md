@@ -60,13 +60,13 @@ concurrent joins. Async TTL is 7 days (live sessions 24h).
 Winner + runners-up, ranked **hearts → rating → matched-criteria** (`rankFinalists`,
 in utils.js, unit-tested). Agreement = unanimous or true majority (`> half`); none →
 "No matches". Movies use genres for the criteria tiebreak, food uses cuisines.
-Heart rounds narrow the agreed pool, and differ by session type:
-- **Together (live)**: >2 agreed → heart rounds repeat until ≤2 survive.
-- **Separately (async)**: ≥2 agreed → exactly ONE mandatory heart round (repeat
-  rounds would each cost another day of waiting), then straight to the final
-  ranking however many survive.
-Either way the group can **promote a runner-up** to tonight's pick from the results
-screen (local state; works signed-out, which async sessions always are).
+Heart rounds narrow the agreed pool (>2 agreed triggers one), and differ by type:
+- **Together (live)**: rounds repeat until ≤2 survive.
+- **Separately (async)**: exactly ONE round — repeat rounds would each cost another
+  day of waiting — then straight to the final ranking however many survive.
+Either way the group can **promote a runner-up** to tonight's pick; the choice is
+stored on the session (`chosenId`, via PATCH `set`) so everyone sees the same pick,
+and it works signed-out.
 
 ## Palette `C`
 bg `#f4f7fa` · card `#fff` · border `#dde6ef` · accent `#2563eb` · gold `#f59e0b` ·
@@ -111,6 +111,17 @@ pausing for confirmation. Per change:
   session ids must be 4–10 chars; bash `wait` with no args also waits on backgrounded
   dev servers (capture specific PIDs).
 - Don't commit temp screenshots — write to scratchpad and `rm`.
+
+## Identity
+Participants are identified by a **device id** (`mn_userid`, localStorage) — no login
+required, which is what makes invite links work for anyone. When a user IS signed in,
+their participant id becomes `u_<userKey first 12>` instead, so the same person is
+recognized on any device they log in on (open the link on a laptop → resume your own
+prefs/votes). Sessions that already know the device id keep using it, so signing in
+mid-session doesn't fork a duplicate participant. The identity is always resolved
+against the **fetched** session (`idFor(s)`), never React state, since on link entry
+state hasn't loaded yet. Signed-in users also get their open-sessions list mirrored
+to the profile so it follows them across devices.
 
 ## Open review items
 - **No auth on sessions/profiles** — anyone with the code/hash can read/overwrite.

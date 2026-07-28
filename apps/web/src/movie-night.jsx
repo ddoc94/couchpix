@@ -782,15 +782,29 @@ export default function MovieNightApp() {
   // localStorage so it survives tab closes; entries age out after 8 days (past
   // the 7-day async TTL) and dead sessions are pruned when a re-entry 404s.
   const [mySessions, setMySessions] = useLocalStorage("mn_mysessions", []);
+  const SESSION_LIST_TTL = 8 * 24 * 3600 * 1000; // just past the 7-day async TTL
+  const freshEntries = (list, exceptId) => (list || [])
+    .filter(e => e.id !== exceptId && Date.now() - (e.addedAt || 0) < SESSION_LIST_TTL);
   const rememberSession = (s) => {
     if (!s?.id || !s?.activity) return;
-    setMySessions(prev => {
-      const fresh = (prev || []).filter(e =>
-        e.id !== s.id && Date.now() - (e.addedAt || 0) < 8 * 24 * 3600 * 1000);
-      return [{ id: s.id, activity: s.activity, addedAt: Date.now() }, ...fresh].slice(0, 12);
-    });
+    const entry = { id: s.id, activity: s.activity, addedAt: Date.now() };
+    setMySessions(prev => [entry, ...freshEntries(prev, s.id)].slice(0, 12));
+    // Signed in? Mirror onto the profile too, so the session follows you to any
+    // other device you log in on (the local list is per-device by nature).
+    if (profile?.userKey) {
+      const updated = { ...profile, openSessions: [entry, ...freshEntries(profile.openSessions, s.id)].slice(0, 12) };
+      setProfile(updated);
+      putProfile(profile.userKey, updated);
+    }
   };
-  const forgetSession = (id) => setMySessions(prev => (prev || []).filter(e => e.id !== id));
+  const forgetSession = (id) => {
+    setMySessions(prev => (prev || []).filter(e => e.id !== id));
+    if (profile?.userKey && (profile.openSessions || []).some(e => e.id === id)) {
+      const updated = { ...profile, openSessions: profile.openSessions.filter(e => e.id !== id) };
+      setProfile(updated);
+      putProfile(profile.userKey, updated);
+    }
+  };
   // userId & userName live in localStorage so they survive PWA force-quit
   // (sessionStorage clears on close, which led to admins losing their admin
   // status when they reopened the app and rejoined their own session).
@@ -800,13 +814,30 @@ export default function MovieNightApp() {
     try { const old = sessionStorage.getItem("mn_username"); if (old) return JSON.parse(old); } catch {}
     return "";
   });
-  const [userId] = useLocalStorage("mn_userid", () => {
+  const [deviceId] = useLocalStorage("mn_userid", () => {
     try { const old = sessionStorage.getItem("mn_userid"); if (old) return JSON.parse(old); } catch {}
     return Math.random().toString(36).slice(2,10);
   });
 
   // ── Optional email identity (persists in localStorage so it survives tab close) ──
   const [profile, setProfile] = useLocalStorage("mn_profile", null); // { email, userKey, sessions: [...] } or null
+
+  // Which id identifies this person INSIDE a session. Signing in is never required
+  // (invite links work anonymously), but when you ARE signed in we key off the
+  // profile so the same human is recognized on any device — open the link on a
+  // laptop, log in, and you resume your own prefs/votes instead of forking a
+  // duplicate participant. Sessions that already know this device (joined before
+  // signing in) keep using the device id so nobody splits mid-session.
+  const profileId = profile?.userKey ? `u_${profile.userKey.slice(0, 12)}` : null;
+  // Resolved against a SPECIFIC session, not React state: on link entry the state
+  // hasn't loaded yet, and deciding too early would fork a signed-in user into a
+  // second participant in sessions that already knew their device.
+  const idFor = (s) => {
+    if (!profileId) return deviceId;
+    const ps = s?.participants || [];
+    return (ps.some(p => p.id === deviceId) && !ps.some(p => p.id === profileId)) ? deviceId : profileId;
+  };
+  const userId = idFor(session);
 
   // Enter a session by id. Used by the URL-param effect (invite link) AND the
   // QR scanner. If we already have a usable name (signed-in displayName, or a
@@ -818,13 +849,14 @@ export default function MovieNightApp() {
     if (!s) return false;
     const nameToUse = profile?.displayName?.trim() || userName?.trim();
     if (nameToUse) {
-      const alreadyIn = s.participants?.some(p => p.id === userId);
+      const myId = idFor(s); // decided against the FETCHED session, not stale state
+      const alreadyIn = s.participants?.some(p => p.id === myId);
       let joined = s;
       if (alreadyIn) {
         // Don't re-add (would reset our votes/prefs) — just adopt the fresh copy.
         setSession(s);
       } else {
-        const me = { id: userId, name: nameToUse, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
+        const me = { id: myId, name: nameToUse, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
         const updated = await patchParticipant(sid, me);
         joined = updated || { ...s, participants: [...(s.participants || []), me] };
         setSession(joined);
@@ -891,11 +923,23 @@ export default function MovieNightApp() {
   const startMoviesSession = () => { setSetupActivity(ACTIVITIES.MOVIES); setScreen("setup"); };
   const startFoodSession = () => { setSetupActivity(ACTIVITIES.FOOD); setScreen("setup"); };
 
+  // Home list = this device's sessions ∪ the signed-in profile's, newest first.
+  // (Computed here, below `profile`, so it isn't in its temporal dead zone.)
+  const openSessions = (() => {
+    const merged = new Map();
+    for (const e of [...(mySessions || []), ...((profile?.openSessions) || [])]) {
+      if (Date.now() - (e.addedAt || 0) >= SESSION_LIST_TTL) continue;
+      const prev = merged.get(e.id);
+      if (!prev || (e.addedAt || 0) > (prev.addedAt || 0)) merged.set(e.id, e);
+    }
+    return [...merged.values()].sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+  })();
+
   const screens = {
     home: <HomeScreen
       profile={profile}
       userId={userId}
-      mySessions={(mySessions || []).filter(e => Date.now() - (e.addedAt || 0) < 8 * 24 * 3600 * 1000)}
+      mySessions={openSessions}
       onResume={async (id) => {
         const ok = await enterSession(id);
         if (!ok) { forgetSession(id); alert("That session has expired."); }
@@ -936,7 +980,7 @@ export default function MovieNightApp() {
         // answered, then wandered off" stranding.
         routeIntoSession(s);
       }} />,
-    join: <JoinScreen session={session} userId={userId} userName={userName} setUserName={setUserName}
+    join: <JoinScreen session={session} userId={userId} resolveId={idFor} userName={userName} setUserName={setUserName}
       onJoined={(s) => { syncSession(s); rememberSession(s); routeIntoSession(s); }}
       onSessionLoad={(s) => syncSession(s)} />,
     lobby: <LobbyScreen session={session} userId={userId} onStarted={(s) => {
@@ -2390,7 +2434,7 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
 }
 
 // ─── Join Screen ──────────────────────────────────────────────────────────────
-function JoinScreen({ session, userId, userName, setUserName, onJoined, onSessionLoad }) {
+function JoinScreen({ session, userId, resolveId, userName, setUserName, onJoined, onSessionLoad }) {
   const [code, setCode] = useState(session?.id || "");
   const [localName, setLocalName] = useState(userName || "");
   const [error, setError] = useState("");
@@ -2405,10 +2449,13 @@ function JoinScreen({ session, userId, userName, setUserName, onJoined, onSessio
     getSession(sid).then(async s => {
       if (!s) { setError("Session not found. Check the code or ask the host to reshare the link."); setJoining(false); return; }
       setUserName(localName.trim());
-      if (s.participants.find(p => p.id === userId)) {
+      // Resolve identity against the fetched session (manual code entry may not
+      // have it in state yet) so a signed-in user doesn't fork a duplicate.
+      const myId = resolveId ? resolveId(s) : userId;
+      if (s.participants.find(p => p.id === myId)) {
         setJoining(false); onJoined(s); return; // already a member — don't reset our state
       }
-      const me = { id: userId, name: localName.trim(), votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
+      const me = { id: myId, name: localName.trim(), votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
       const updated = await patchParticipant(sid, me);
       setJoining(false);
       onJoined(updated || { ...s, participants: [...s.participants, me] });
@@ -3135,9 +3182,11 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   const [heartPool, setHeartPool] = useState(null); // null = not yet determined
   const [myHeart, setMyHeart] = useState(null);
   const [heartRound, setHeartRound] = useState(1);
-  // The group can override the ranked winner by promoting a runner-up. Declared
-  // before any conditional return so hook order stays stable.
-  const [chosenId, setChosenId] = useState(null);
+  // The group can override the ranked winner by promoting a runner-up. The choice
+  // lives on the SESSION so everyone sees the same pick; this local value is just
+  // an optimistic override, cleared once our write comes back. Declared before any
+  // conditional return so hook order stays stable.
+  const [pendingChoice, setPendingChoice] = useState(null);
 
   // ── Poll KV for updates ──
   // heartPool and heartRound now live on the session (KV) rather than local state,
@@ -3165,12 +3214,9 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
       // into a >2 final that nobody narrowed.
       const agreedIds = movieAgreedPool(s).map(m => m.id);
 
-      // Live: only worth hearting when >2 agreed (≤2 already reads as pick +
-      // runner-up). Swiping separately: hearting is MANDATORY whenever there's any
-      // choice at all (2+) — the group never gathers to talk it through, so the
-      // hearts ARE the conversation.
-      const needsHeart = s.asyncMode ? agreedIds.length >= 2 : agreedIds.length > 2;
-      if (!needsHeart) { setPhase("final"); return; }
+      // Hearting only earns its keep with 3+ agreed — 2 already reads as pick +
+      // runner-up. (Async differs only in running a SINGLE round; see below.)
+      if (agreedIds.length <= 2) { setPhase("final"); return; }
 
       // Every participant MUST heart one before we advance. Until then we stay in
       // the heart phase (there is no skip), so the pool always narrows.
@@ -3456,8 +3502,17 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   const ranked = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres });
   // Top-ranked movie is the proposed pick, but the group can promote a runner-up
   // instead — it becomes the featured card and the rest fall back to runners-up.
+  // Server value is the shared truth; pendingChoice covers the gap until it lands.
+  const chosenId = pendingChoice ?? latestSession.chosenId ?? null;
   const winner = ranked.find(m => m.id === chosenId) || ranked[0];
   const runnersUp = ranked.filter(m => m.id !== winner.id).slice(0, 3);
+  // Promote a runner-up for EVERYONE (atomic top-level set on the session).
+  const chooseMovie = (id) => {
+    setPendingChoice(id);
+    if (profile?.userKey) setWatchStatus(id, "watched");
+    patchSession(latestSession.id, { set: { chosenId: id } })
+      .then(s => { if (s) { setLatestSession(s); setPendingChoice(null); } });
+  };
   const finalMovies = ranked; // saveForLater() looks movies up here
 
   // (auto-save effect lives near the top of the component, before conditional returns,
@@ -3637,12 +3692,12 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
                   <span style={{ color:C.red, display:"inline-flex", alignItems:"center", gap:3 }}><Ico name="tomato" size={12} /> {movie.rt}%</span>
                   {(heartCounts[movie.id] ?? 0) > 0 && <span style={{ color:C.accent, fontWeight:700 }}>♥ {heartCounts[movie.id]}</span>}
                 </div>
-                {/* Promote a runner-up to tonight's pick. Works signed-out too
-                    (async sessions are anonymous by design); when signed in it
-                    also records the watch status, same as the winner's button. */}
+                {/* Promote a runner-up to tonight's pick — shared with the whole
+                    group. Works signed-out (async sessions don't require login);
+                    when signed in it also records the watch status. */}
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
                   <button
-                    onClick={() => { setChosenId(movie.id); if (profile?.userKey) setWatchStatus(movie.id, "watched"); }}
+                    onClick={() => chooseMovie(movie.id)}
                     style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.muted, borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, cursor:"pointer" }}
                   >We're watching this →</button>
                 </div>
@@ -4274,9 +4329,10 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   const [myHeart, setMyHeart] = useState(null);
   const [heartRound, setHeartRound] = useState(1);
   // The group can override the ranked winner by promoting a runner-up ("We're
-  // going here"). Declared up here so hook order stays stable across the
-  // waiting/heart/final returns below.
-  const [chosenId, setChosenId] = useState(null);
+  // going here"). The choice lives on the SESSION so everyone sees it; this is an
+  // optimistic override until our write lands. Declared up here so hook order
+  // stays stable across the waiting/heart/final returns below.
+  const [pendingChoice, setPendingChoice] = useState(null);
   const navedRef = useRef(false); // ensure we navigate to a new round only once
 
   // Poll KV. heartPool/heartRound live on the session so every device shares the
@@ -4303,10 +4359,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     if (!allSwipeDone) { setPhase("waiting"); return; }
 
     const agreedIds = foodAgreedPool(s).map(r => r.id);
-    // Swiping separately: hearting is mandatory whenever there's a choice (2+) —
-    // see the movie flow for the reasoning.
-    const needsHeart = s.asyncMode ? agreedIds.length >= 2 : agreedIds.length > 2;
-    if (!needsHeart) { setPhase("final"); return; }
+    if (agreedIds.length <= 2) { setPhase("final"); return; }
 
     const allHeartDone = s.participants.every(p => p.heart !== undefined);
     if (!allHeartDone) {
@@ -4450,9 +4503,16 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   const ranked = rankFinalists(agreed, participants, { ratingOf: r => r.rating, tagsOf: r => r.matchedCuisines, pickedOf: p => p.cuisines });
   // Top-ranked spot is the proposed pick, but the group can promote a runner-up
   // instead — whichever is chosen becomes the featured card and the rest drop back
-  // into the runners-up list.
+  // into the runners-up list. Server value is shared truth; pending covers the gap.
+  const chosenId = pendingChoice ?? latest.chosenId ?? null;
   const winner = ranked.find(r => r.id === chosenId) || ranked[0];
   const runnersUp = ranked.filter(r => r.id !== winner.id).slice(0, 3);
+  // Promote for EVERYONE (atomic top-level set on the session).
+  const choosePlace = (id) => {
+    setPendingChoice(id);
+    patchSession(latest.id, { set: { chosenId: id } })
+      .then(s => { if (s) { setLatest(s); setPendingChoice(null); } });
+  };
 
   return (
     <div style={{ paddingTop:16, display:"flex", flexDirection:"column", gap:16, paddingBottom:40 }}>
@@ -4478,7 +4538,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
                   <div style={{ fontSize:12, color:C.muted }}><Ico name="star" size={11} filled color={C.gold} style={{ marginRight:3 }} />{r.rating} · {r.distanceMi} mi{hearts ? ` · ♥ ${hearts}` : ""}</div>
                   <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:7 }}>
                     <button
-                      onClick={() => setChosenId(r.id)}
+                      onClick={() => choosePlace(r.id)}
                       style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.muted, borderRadius:8, padding:"5px 9px", fontSize:11, fontWeight:700, cursor:"pointer" }}
                     >We're going here →</button>
                     {(r.website || r.mapsUri) && (
