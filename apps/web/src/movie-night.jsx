@@ -776,6 +776,21 @@ export default function MovieNightApp() {
   const [session, setSession] = useStorage("mn_session", null);
   // Which activity the SetupScreen should create (set by the NetPix/FoodPix create buttons)
   const [setupActivity, setSetupActivity] = useStorage("mn_setupactivity", ACTIVITIES.MOVIES);
+  // Sessions this device created or joined, newest first — drives the "Your open
+  // sessions" list on home so multi-session weeks (two friend groups, two plans)
+  // are one tap to re-enter instead of digging the link out of a group chat.
+  // localStorage so it survives tab closes; entries age out after 8 days (past
+  // the 7-day async TTL) and dead sessions are pruned when a re-entry 404s.
+  const [mySessions, setMySessions] = useLocalStorage("mn_mysessions", []);
+  const rememberSession = (s) => {
+    if (!s?.id || !s?.activity) return;
+    setMySessions(prev => {
+      const fresh = (prev || []).filter(e =>
+        e.id !== s.id && Date.now() - (e.addedAt || 0) < 8 * 24 * 3600 * 1000);
+      return [{ id: s.id, activity: s.activity, addedAt: Date.now() }, ...fresh].slice(0, 12);
+    });
+  };
+  const forgetSession = (id) => setMySessions(prev => (prev || []).filter(e => e.id !== id));
   // userId & userName live in localStorage so they survive PWA force-quit
   // (sessionStorage clears on close, which led to admins losing their admin
   // status when they reopened the app and rejoined their own session).
@@ -814,6 +829,7 @@ export default function MovieNightApp() {
         joined = updated || { ...s, participants: [...(s.participants || []), me] };
         setSession(joined);
       }
+      rememberSession(joined);
       // Live sessions → lobby; plan-ahead sessions → straight to wherever this
       // participant left off (prefs / swiping / results).
       routeIntoSession(joined);
@@ -878,6 +894,13 @@ export default function MovieNightApp() {
   const screens = {
     home: <HomeScreen
       profile={profile}
+      userId={userId}
+      mySessions={(mySessions || []).filter(e => Date.now() - (e.addedAt || 0) < 8 * 24 * 3600 * 1000)}
+      onResume={async (id) => {
+        const ok = await enterSession(id);
+        if (!ok) { forgetSession(id); alert("That session has expired."); }
+      }}
+      onDismissSession={forgetSession}
       onStartMovies={() => setScreen("movienight")}
       onStartFood={() => setScreen("foodnight")}
       onStartQuestions={() => setScreen("questions")}
@@ -905,9 +928,9 @@ export default function MovieNightApp() {
       }}
       onCancel={() => setScreen("home")} />,
     setup: <SetupScreen userId={userId} userName={userName} setUserName={setUserName} activity={setupActivity}
-      onCreated={(s) => { syncSession(s); setScreen("lobby"); }} />,
+      onCreated={(s) => { syncSession(s); rememberSession(s); setScreen("lobby"); }} />,
     join: <JoinScreen session={session} userId={userId} userName={userName} setUserName={setUserName}
-      onJoined={(s) => { syncSession(s); routeIntoSession(s); }}
+      onJoined={(s) => { syncSession(s); rememberSession(s); routeIntoSession(s); }}
       onSessionLoad={(s) => syncSession(s)} />,
     lobby: <LobbyScreen session={session} userId={userId} onStarted={(s) => {
       syncSession(s);
@@ -1066,7 +1089,37 @@ function Logo({ size = 40 }) {
 }
 
 // ─── Home Screen ──────────────────────────────────────────────────────────────
-function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onSignIn, onViewProfile }) {
+function HomeScreen({ profile, userId, mySessions = [], onResume, onDismissSession, onStartMovies, onStartFood, onStartQuestions, onSignIn, onViewProfile }) {
+  // Live status per remembered session, fetched once when home renders:
+  // undefined = still checking, null = gone from the server (expired), else the
+  // session blob. One cheap DO read per card; no polling on the home screen.
+  const [liveState, setLiveState] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    mySessions.forEach(e => {
+      getSession(e.id).then(s => { if (!cancelled) setLiveState(prev => ({ ...prev, [e.id]: s })); });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // One-line "where is this session at" summary from this device's perspective.
+  const statusOf = (s) => {
+    const me = s.participants?.find(p => p.id === userId);
+    const isFood = s.activity === ACTIVITIES.FOOD;
+    const deckReady = isFood
+      ? (s.restaurants?.length > 0 || s.foodReady)
+      : (s.movies?.length > 0 || s.moviesGenerated);
+    const everyoneDone = s.participants?.length > 0 && s.participants.every(p => p.done);
+    if (everyoneDone) return "Results are in";
+    if (me?.done) return "You're done — waiting on the others";
+    if (deckReady) return "Ready to swipe";
+    if (!s.started) return "In the lobby";
+    if (me?.prefsDone) return s.asyncMode
+      ? `${s.participants?.length || 1} of ${s.expectedCount || 2} in`
+      : "Waiting for everyone";
+    return "Pick your preferences";
+  };
   // Prefer the explicit display name; fall back to the email prefix for older profiles
   const firstName = profile?.displayName?.trim() || (profile?.email ? profile.email.split("@")[0] : null);
   return (
@@ -1116,6 +1169,44 @@ function HomeScreen({ profile, onStartMovies, onStartFood, onStartQuestions, onS
           </div>
           <span style={{ color:C.accent, fontSize:18, fontWeight:800, flexShrink:0 }}>→</span>
         </button>
+      )}
+
+      {/* ── Open sessions: jump back into anything you've created or joined ── */}
+      {mySessions.length > 0 && (
+        <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8, marginBottom:18 }}>
+          <div style={{ textAlign:"center", color:C.muted, fontSize:13, fontWeight:700, letterSpacing:0.5, marginBottom:2 }}>
+            Your open sessions
+          </div>
+          {mySessions.map(e => {
+            const s = liveState[e.id]; // undefined = checking, null = expired
+            const isFood = (s?.activity || e.activity) === ACTIVITIES.FOOD;
+            const dead = s === null;
+            const status = s ? statusOf(s) : dead ? "Expired — tap to remove" : "Checking…";
+            return (
+              <div key={e.id}
+                onClick={() => dead ? onDismissSession(e.id) : onResume(e.id)}
+                style={{ display:"flex", alignItems:"center", gap:12, background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"11px 12px", cursor:"pointer", opacity: dead ? 0.55 : 1 }}>
+                <div style={{ width:36, height:36, borderRadius:9, background:`${isFood ? C.green : C.accent}16`, color:isFood ? C.green : C.accent, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <Ico name={isFood ? "food" : "film"} size={18} />
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:C.text }}>
+                    {isFood ? "FoodPix" : "NetPix"}
+                    <span style={{ color:C.muted, fontWeight:600, fontSize:12, fontFamily:"monospace", letterSpacing:1, marginLeft:8 }}>{e.id}</span>
+                  </div>
+                  <div style={{ fontSize:12, color:C.muted, marginTop:1 }}>{status}</div>
+                </div>
+                <button
+                  onClick={(ev) => { ev.stopPropagation(); onDismissSession(e.id); }}
+                  aria-label="Remove session"
+                  style={{ background:"transparent", border:"none", color:C.muted, cursor:"pointer", padding:6, display:"flex", flexShrink:0 }}>
+                  ✕
+                </button>
+                {!dead && <Ico name="arrowRight" size={15} color={C.muted} style={{ flexShrink:0 }} />}
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {/* ── Activity tiles: pick what you want to do ── */}
