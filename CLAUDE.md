@@ -47,8 +47,10 @@ round, heartPool, heartRound, foodReady, savedMovies, asyncMode, expectedCount,
 moviesGenerated }`. Codes match `[A-Z0-9]{4,10}`.
 
 **Plan-ahead (async) sessions** (`asyncMode: true`): created already-`started`; the
-link drops joiners straight into prefs (no lobby wait); admin answers FIRST via
-atomic PATCH (participant + criteria); deck generation triggers on ANY device once
+admin answers FIRST (setup → straight to prefs, no lobby; the post-answer waiting
+screen is the share surface with QR + link) via atomic PATCH (participant +
+criteria); the link drops joiners straight into prefs (no lobby wait); deck
+generation triggers on ANY device once
 `participants.length >= expectedCount` and all `prefsDone` — a DO claim
 (`POST /session/:id` `{claim}`, 120s freshness) elects exactly one generator, which
 writes the deck via PATCH `set` (allowlisted top-level fields) so it can't clobber
