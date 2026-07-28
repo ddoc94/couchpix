@@ -847,24 +847,31 @@ export default function MovieNightApp() {
   const enterSession = async (sid) => {
     const s = await getSession(sid);
     if (!s) return false;
+    // Resolve who we are against the FETCHED session (React state hasn't loaded yet).
+    const myId = idFor(s);
+    // Already a participant? Then this is a RE-ENTRY — someone re-opening the
+    // invite link (e.g. from the group chat) to check on a session they're already
+    // in. Recognize them by id and drop them back where they left off. Never re-add
+    // (that would wipe their votes/prefs) and never bounce them to the Join screen
+    // as if they were a stranger.
+    if (s.participants?.some(p => p.id === myId)) {
+      setSession(s);
+      rememberSession(s);
+      routeIntoSession(s, myId);
+      return true;
+    }
+    // New participant. If we already know a name, add them and route straight in;
+    // otherwise send them to Join to type one first.
     const nameToUse = profile?.displayName?.trim() || userName?.trim();
     if (nameToUse) {
-      const myId = idFor(s); // decided against the FETCHED session, not stale state
-      const alreadyIn = s.participants?.some(p => p.id === myId);
-      let joined = s;
-      if (alreadyIn) {
-        // Don't re-add (would reset our votes/prefs) — just adopt the fresh copy.
-        setSession(s);
-      } else {
-        const me = { id: myId, name: nameToUse, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
-        const updated = await patchParticipant(sid, me);
-        joined = updated || { ...s, participants: [...(s.participants || []), me] };
-        setSession(joined);
-      }
+      const me = { id: myId, name: nameToUse, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
+      const updated = await patchParticipant(sid, me);
+      const joined = updated || { ...s, participants: [...(s.participants || []), me] };
+      setSession(joined);
       rememberSession(joined);
       // Live sessions → lobby; plan-ahead sessions → straight to wherever this
       // participant left off (prefs / swiping / results).
-      routeIntoSession(joined);
+      routeIntoSession(joined, myId);
     } else {
       setSession(s);
       setScreen("join");
@@ -905,10 +912,10 @@ export default function MovieNightApp() {
   // Live sessions go through the lobby (share link, wait, admin starts). Plan-ahead
   // (async) sessions have no live "start" moment — drop the participant straight into
   // wherever they left off: preferences, swiping, or results.
-  const routeIntoSession = (s) => {
+  const routeIntoSession = (s, id = userId) => {
     if (!s?.asyncMode) { setScreen("lobby"); return; }
     const isFood = s.activity === ACTIVITIES.FOOD;
-    const me = s.participants?.find(p => p.id === userId);
+    const me = s.participants?.find(p => p.id === id);
     const deckReady = isFood
       ? (s.restaurants?.length > 0 || s.foodReady)
       : (s.movies?.length > 0 || s.moviesGenerated);
@@ -3187,6 +3194,14 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   // an optimistic override, cleared once our write comes back. Declared before any
   // conditional return so hook order stays stable.
   const [pendingChoice, setPendingChoice] = useState(null);
+  // The round number we mounted with. When the host retries after "No matches"
+  // (doNewRound bumps `round` and regenerates the deck), OTHER devices see the
+  // round climb and get pulled back into swiping — otherwise a guest sitting on
+  // this screen is stranded on "waiting…" while the group has moved to a new deck.
+  // Retries stay on the SAME session/link; nobody needs a fresh invite. (Food
+  // already does the equivalent via its foodReady===false reset listener.)
+  const roundRef = useRef(session?.round || 1);
+  const navedRef = useRef(false);
 
   // ── Poll KV for updates ──
   // heartPool and heartRound now live on the session (KV) rather than local state,
@@ -3194,6 +3209,12 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   // a mirror that re-syncs on each poll.
   useAdaptivePoll(session?.id, (s) => {
         setLatestSession(s);
+        // Host started a fresh round on another device → follow them into swiping.
+        if (typeof s.round === "number" && s.round > roundRef.current && !navedRef.current) {
+          navedRef.current = true;
+          onRestart(s);
+          return;
+        }
         // Mirror server-side heart state into local React state
         if (Array.isArray(s.heartPool)) setHeartPool(s.heartPool);
         // When a new heart round starts (often written by ANOTHER device), clear
