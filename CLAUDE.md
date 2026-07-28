@@ -58,9 +58,15 @@ concurrent joins. Async TTL is 7 days (live sessions 24h).
 
 ## Results logic
 Winner + runners-up, ranked **hearts → rating → matched-criteria** (`rankFinalists`,
-in utils.js, unit-tested). >2 agreed options → **heart rounds** narrow them.
-Agreement = unanimous or true majority (`> half`); none → "No matches". Movies use
-genres for the criteria tiebreak, food uses cuisines.
+in utils.js, unit-tested). Agreement = unanimous or true majority (`> half`); none →
+"No matches". Movies use genres for the criteria tiebreak, food uses cuisines.
+Heart rounds narrow the agreed pool, and differ by session type:
+- **Together (live)**: >2 agreed → heart rounds repeat until ≤2 survive.
+- **Separately (async)**: ≥2 agreed → exactly ONE mandatory heart round (repeat
+  rounds would each cost another day of waiting), then straight to the final
+  ranking however many survive.
+Either way the group can **promote a runner-up** to tonight's pick from the results
+screen (local state; works signed-out, which async sessions always are).
 
 ## Palette `C`
 bg `#f4f7fa` · card `#fff` · border `#dde6ef` · accent `#2563eb` · gold `#f59e0b` ·
