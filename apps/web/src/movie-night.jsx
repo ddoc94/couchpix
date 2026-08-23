@@ -476,43 +476,51 @@ function prefetchTrailer(movieId) {
 // Card header: shows the movie's trailer thumbnail with a play button, and plays
 // the trailer inline in that same space when tapped. Falls back to the poster image
 // when no trailer exists. The native YouTube player handles fullscreen.
-function CardTrailerHeader({ movie, posterUrl, height = 280 }) {
+function CardTrailerHeader({ movie, posterUrl, backdropUrl }) {
   // Seed from cache synchronously when available so prefetched cards never flash.
   const [ytKey, setYtKey] = useState(() => trailerKeyCache.has(movie.id) ? trailerKeyCache.get(movie.id) : undefined); // undefined = loading, null = none, string = key
   const [playing, setPlaying] = useState(false);
-  const [posterError, setPosterError] = useState(false);
-  const [thumbError, setThumbError] = useState(false);
+  // Index into the ordered image-source chain below. We advance it when a source
+  // errors or resolves to YouTube's gray placeholder, so the header always lands
+  // on a real image instead of getting stuck on a broken/gray one.
+  const [srcIdx, setSrcIdx] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    setPlaying(false); setThumbError(false);
+    setPlaying(false); setSrcIdx(0);
     if (trailerKeyCache.has(movie.id)) { setYtKey(trailerKeyCache.get(movie.id)); return; }
     setYtKey(undefined);
     fetchTrailerKey(movie.id).then(k => { if (!cancelled) setYtKey(k); });
     return () => { cancelled = true; };
   }, [movie.id]);
 
-  // maxresdefault is sharp but not always generated; mqdefault is 16:9 and always exists.
-  const thumbUrl = ytKey
-    ? `https://img.youtube.com/vi/${ytKey}/${thumbError ? "mqdefault" : "maxresdefault"}.jpg`
-    : null;
-  // Only fall back to the poster once we've CONFIRMED there's no trailer (ytKey === null).
-  // While the key is still loading (undefined) we show a neutral background so the poster
-  // doesn't flash in and then get replaced by the trailer thumbnail.
-  const showPoster = ytKey === null && posterUrl && !posterError;
+  // Ordered fallback chain — every entry is 16:9 except the poster (a last resort).
+  // maxresdefault is sharp but only exists for HD-uploaded trailers; mqdefault is
+  // 16:9 and ALWAYS exists for a valid video. The TMDB backdrop (also 16:9, present
+  // for nearly all popular titles) covers movies with no trailer at all, so we no
+  // longer cram a portrait poster into the landscape header.
+  const sources = [];
+  if (ytKey) {
+    sources.push(`https://img.youtube.com/vi/${ytKey}/maxresdefault.jpg`);
+    sources.push(`https://img.youtube.com/vi/${ytKey}/mqdefault.jpg`);
+  }
+  if (backdropUrl) sources.push(backdropUrl);
+  if (posterUrl) sources.push(posterUrl);
+  // While the key is still loading (undefined) show a neutral background rather than
+  // a source, so nothing flashes in and then gets replaced by the trailer thumbnail.
+  const currentSrc = ytKey === undefined ? null : (sources[srcIdx] ?? null);
   const stop = e => e.stopPropagation();
 
+  const advance = () => setSrcIdx(i => i + 1);
   // When maxresdefault doesn't exist, YouTube returns a 404 whose BODY is a 120×90
   // gray placeholder. iOS WebView renders that body instead of firing onError, so we
-  // also detect the placeholder by its tiny dimensions on load and fall back to mqdefault.
-  const handleThumbLoad = e => {
-    if (!thumbError && e.target.naturalWidth > 0 && e.target.naturalWidth <= 120) {
-      setThumbError(true);
-    }
+  // also detect the placeholder by its tiny dimensions on load and advance the chain.
+  const handleImgLoad = e => {
+    if (e.target.naturalWidth > 0 && e.target.naturalWidth <= 120) advance();
   };
 
   return (
-    <div style={{ height, position:"relative", background:`linear-gradient(135deg, ${C.accentSoft}, ${C.bg})`, overflow:"hidden" }}>
+    <div style={{ width:"100%", aspectRatio:"16 / 9", position:"relative", background:`linear-gradient(135deg, ${C.accentSoft}, ${C.bg})`, overflow:"hidden" }}>
       {playing && ytKey ? (
         <iframe
           src={`https://www.youtube.com/embed/${ytKey}?autoplay=1&playsinline=1`}
@@ -522,11 +530,8 @@ function CardTrailerHeader({ movie, posterUrl, height = 280 }) {
         />
       ) : (
         <>
-          {thumbUrl ? (
-            <img src={thumbUrl} alt={movie.title} onError={() => setThumbError(true)} onLoad={handleThumbLoad}
-              style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
-          ) : showPoster ? (
-            <img src={posterUrl} alt={movie.title} onError={() => setPosterError(true)}
+          {currentSrc ? (
+            <img src={currentSrc} alt={movie.title} onError={advance} onLoad={handleImgLoad}
               style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
           ) : ytKey === undefined ? (
             // Key still loading — neutral gradient (the container background), no flash.
@@ -667,7 +672,7 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
 
       <div style={{ background: C.card, borderRadius:20, overflow:"hidden", boxShadow:"0 16px 40px rgba(15,23,42,0.12)", border:`1px solid ${C.border}` }}>
         {/* Trailer thumbnail / inline player */}
-        <CardTrailerHeader movie={movie} posterUrl={posterUrl} />
+        <CardTrailerHeader movie={movie} posterUrl={posterUrl} backdropUrl={movie.backdrop} />
 
         {/* Info */}
         <div style={{ padding:"16px 20px 20px" }}>

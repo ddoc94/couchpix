@@ -2,6 +2,7 @@
 // read from `env` inside fetch() — never hardcode API keys in source.
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
+const TMDB_BACKDROP = "https://image.tmdb.org/t/p/w780"; // 16:9 stills for the card header
 const SESSION_TTL = 60 * 60 * 24;          // 24 hours (live "decide together now" sessions)
 const ASYNC_SESSION_TTL = 60 * 60 * 24 * 7; // 7 days (plan-ahead sessions filled out over days)
 const PROFILE_TTL = 60 * 60 * 24 * 90;     // 90 days — sliding window, refreshed on each write
@@ -288,6 +289,11 @@ export default {
             director,
             awards,
             poster: m.poster_path ? `${TMDB_IMG}${m.poster_path}` : null,
+            // 16:9 backdrop — the card's trailer header falls back to this (matching
+            // the trailer's aspect ratio) when a movie has no trailer or the YouTube
+            // thumbnail is missing, instead of cropping the portrait poster.
+            backdrop: (m.backdrop_path || detail.backdrop_path)
+              ? `${TMDB_BACKDROP}${m.backdrop_path || detail.backdrop_path}` : null,
             streaming: [],
             color: "#1a1a24",
             _confirmedSeq: confirmedSeq, // stripped before return
