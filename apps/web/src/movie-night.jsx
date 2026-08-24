@@ -4297,8 +4297,8 @@ function FoodSwipingScreen({ session, userId, onDone }) {
   const [votes, setVotes] = useState({});
   const [history, setHistory] = useState([]);
   const [submitting, setSubmitting] = useState(false);
-  // Two-phase flow for LIVE sessions: "swiping" → "review" → submit (mirrors
-  // NetPix). Plan-ahead (async) keeps the lean submit-on-last-swipe flow.
+  // Two-phase flow: "swiping" → "review" → submit, for both live and async
+  // (mirrors NetPix).
   const [phase, setPhase] = useState("swiping");
   const deck = useRef(session.restaurants || []);
   const restaurants = deck.current;
@@ -4313,12 +4313,10 @@ function FoodSwipingScreen({ session, userId, onDone }) {
     const newVotes = { ...votes, [current.id]: dir };
     setVotes(newVotes);
     setHistory(h => [...h, idx]);
-    if (idx + 1 >= restaurants.length) {
-      // Last card: live sessions get a review step to audit/flip every vote
-      // before submitting; async submits straight through.
-      if (!session.asyncMode) setPhase("review");
-      else finish(newVotes);
-    } else setIdx(i => i + 1);
+    // Last card → review step (audit/flip every vote before submitting), for
+    // both live and async, matching NetPix.
+    if (idx + 1 >= restaurants.length) setPhase("review");
+    else setIdx(i => i + 1);
   };
 
   const setReviewVote = (id, dir) => setVotes(v => ({ ...v, [id]: dir }));
@@ -4344,7 +4342,7 @@ function FoodSwipingScreen({ session, userId, onDone }) {
     return <div style={{ paddingTop:60, textAlign:"center", color:C.muted }}>Saving your picks…</div>;
   }
 
-  // ── Review phase (live sessions): audit and flip every vote before submitting ──
+  // ── Review phase: audit and flip every vote before submitting ──
   if (phase === "review") {
     const yesCount = restaurants.filter(r => votes[r.id] === "yes").length;
     const noCount = restaurants.filter(r => votes[r.id] === "no").length;
