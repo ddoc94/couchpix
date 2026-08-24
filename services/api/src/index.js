@@ -5,7 +5,6 @@ const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
 const TMDB_BACKDROP = "https://image.tmdb.org/t/p/w780"; // 16:9 stills for the card header
 const SESSION_TTL = 60 * 60 * 24;          // 24 hours (live "decide together now" sessions)
 const ASYNC_SESSION_TTL = 60 * 60 * 24 * 7; // 7 days (plan-ahead sessions filled out over days)
-const PROFILE_TTL = 60 * 60 * 24 * 90;     // 90 days — sliding window, refreshed on each write
 const MAX_BODY_BYTES = 512 * 1024;         // cap on a stored session/profile blob (~10x real size)
 
 // Guard a write body before storing it: enforce a size cap and require valid
@@ -86,10 +85,35 @@ export default {
 
     const url = new URL(request.url);
 
+    // ── Metrics (gated) ──
+    // Owner-only account stats. Gated by the METRICS_KEY secret so the numbers
+    // aren't public (the repo is). Derived from stored profiles (key user-<hash>,
+    // each carries createdAt + a sessions history array). Reads every profile, so
+    // it's a heavier call — fine at current scale; revisit if accounts grow large.
+    if (url.pathname === "/metrics") {
+      if (!env.METRICS_KEY) return json({ error: "not found" }, 404);
+      if (url.searchParams.get("key") !== env.METRICS_KEY) return json({ error: "unauthorized" }, 401);
+      let cursor, accounts = 0, totalSavedSessions = 0;
+      const signupsByMonth = {};
+      do {
+        const list = await env.SESSIONS.list({ prefix: "user-", cursor, limit: 1000 });
+        for (const k of list.keys) {
+          accounts++;
+          const p = await env.SESSIONS.get(k.name, "json");
+          if (!p) continue;
+          const m = p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 7) : "unknown";
+          signupsByMonth[m] = (signupsByMonth[m] || 0) + 1;
+          if (Array.isArray(p.sessions)) totalSavedSessions += p.sessions.length;
+        }
+        cursor = list.list_complete ? null : list.cursor;
+      } while (cursor);
+      return json({ accounts, signupsByMonth, totalSavedSessions, generatedAt: new Date().toISOString() });
+    }
+
     // ── User Profile API ──
     // Keyed by a SHA-256 hash of the email (first 24 hex chars) so we never store
-    // the raw email as a KV key. The hash is derived client-side; the body still
-    // contains the raw email so we can display it back to the user.
+    // the raw email as a KV key. The email is NOT kept in the body either (see the
+    // PUT handler, which strips it) — it lives only on the user's own device.
     const profileMatch = url.pathname.match(/^\/user\/([a-f0-9]{8,64})$/i);
     if (profileMatch) {
       const userKey = "user-" + profileMatch[1].toLowerCase();
@@ -109,7 +133,10 @@ export default {
         // user's own device.) badBody already confirmed the body parses.
         const obj = JSON.parse(body);
         if (obj && typeof obj === "object" && !Array.isArray(obj)) delete obj.email;
-        await env.SESSIONS.put(userKey, JSON.stringify(obj), { expirationTtl: PROFILE_TTL });
+        // No expiration — accounts are permanent. A TTL here previously deleted
+        // profiles after 90 idle days while the user's device still showed them
+        // "logged in" (localStorage), which silently loses real accounts.
+        await env.SESSIONS.put(userKey, JSON.stringify(obj));
         return json({ ok: true });
       }
       if (request.method === "DELETE") {
