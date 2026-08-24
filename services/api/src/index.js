@@ -102,7 +102,14 @@ export default {
         const body = await request.text();
         const bad = badBody(body);
         if (bad) return bad;
-        await env.SESSIONS.put(userKey, body, { expirationTtl: PROFILE_TTL });
+        // Strip the raw email before storing. The profile is keyed by a hash of the
+        // email, so an email is guessable → readable; never keep the plaintext at
+        // rest where a read could harvest it. Done server-side so it holds even for
+        // an old/rogue client that still sends it. (The email lives only on the
+        // user's own device.) badBody already confirmed the body parses.
+        const obj = JSON.parse(body);
+        if (obj && typeof obj === "object" && !Array.isArray(obj)) delete obj.email;
+        await env.SESSIONS.put(userKey, JSON.stringify(obj), { expirationTtl: PROFILE_TTL });
         return json({ ok: true });
       }
       if (request.method === "DELETE") {

@@ -151,11 +151,16 @@ async function getProfile(userKey) {
 
 async function putProfile(userKey, data) {
   if (!userKey) return;
+  // Never transmit the raw email to the server. The profile is stored under a hash
+  // of the email, and the email itself only needs to live on THIS device (in
+  // localStorage) — for the display-name fallback, avatar initial, and profile
+  // screen. Keeping it off the server means a profile read can never leak an email.
+  const { email, ...safe } = data || {};
   try {
     await fetch(`${TMDB_PROXY}/user/${userKey}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify(safe),
     });
   } catch {}
 }
