@@ -4297,6 +4297,9 @@ function FoodSwipingScreen({ session, userId, onDone }) {
   const [votes, setVotes] = useState({});
   const [history, setHistory] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  // Two-phase flow for LIVE sessions: "swiping" → "review" → submit (mirrors
+  // NetPix). Plan-ahead (async) keeps the lean submit-on-last-swipe flow.
+  const [phase, setPhase] = useState("swiping");
   const deck = useRef(session.restaurants || []);
   const restaurants = deck.current;
   const current = restaurants[idx];
@@ -4307,11 +4310,18 @@ function FoodSwipingScreen({ session, userId, onDone }) {
 
   const vote = (dir) => {
     if (!current) return;
-    setVotes(v => ({ ...v, [current.id]: dir }));
+    const newVotes = { ...votes, [current.id]: dir };
+    setVotes(newVotes);
     setHistory(h => [...h, idx]);
-    if (idx + 1 >= restaurants.length) finish({ ...votes, [current.id]: dir });
-    else setIdx(i => i + 1);
+    if (idx + 1 >= restaurants.length) {
+      // Last card: live sessions get a review step to audit/flip every vote
+      // before submitting; async submits straight through.
+      if (!session.asyncMode) setPhase("review");
+      else finish(newVotes);
+    } else setIdx(i => i + 1);
   };
+
+  const setReviewVote = (id, dir) => setVotes(v => ({ ...v, [id]: dir }));
 
   const undo = () => {
     if (!history.length) return;
@@ -4332,6 +4342,92 @@ function FoodSwipingScreen({ session, userId, onDone }) {
 
   if (submitting || idx >= restaurants.length) {
     return <div style={{ paddingTop:60, textAlign:"center", color:C.muted }}>Saving your picks…</div>;
+  }
+
+  // ── Review phase (live sessions): audit and flip every vote before submitting ──
+  if (phase === "review") {
+    const yesCount = restaurants.filter(r => votes[r.id] === "yes").length;
+    const noCount = restaurants.filter(r => votes[r.id] === "no").length;
+    return (
+      <div style={{ paddingTop:16, display:"flex", flexDirection:"column", gap:12, paddingBottom:120 }}>
+        <div style={{ textAlign:"center" }}>
+          <h2 style={{ margin:"0 0 4px", fontSize:22 }}>Review your picks</h2>
+          <p style={{ color:C.muted, margin:0, fontSize:13 }}>
+            Tap a vote to flip it. {yesCount} want · {noCount} pass
+          </p>
+        </div>
+
+        {restaurants.map(r => {
+          const v = votes[r.id];
+          const isYes = v === "yes";
+          const isNo = v === "no";
+          return (
+            <div key={r.id} style={{
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 12,
+              overflow: "hidden",
+              display: "flex",
+            }}>
+              <Thumb src={r.photo} icon="plate" w={92} h={92} radius={0} fontSize={30} />
+              <div style={{ flex:1, padding:"10px 12px", display:"flex", flexDirection:"column", gap:8, minWidth:0 }}>
+                <div>
+                  <div style={{ fontSize:15, fontWeight:800, color:C.text, lineHeight:1.2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.name}</div>
+                  <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
+                    {[r.cuisine, r.rating != null ? `★ ${r.rating}` : null, r.distanceMi != null ? `${r.distanceMi} mi` : null].filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                  <button
+                    onClick={() => setReviewVote(r.id, "no")}
+                    aria-label="Pass"
+                    style={{
+                      flex:1, padding:"7px 10px", borderRadius:8,
+                      border: `1.5px solid ${isNo ? C.red : C.border}`,
+                      background: isNo ? C.redSoft : "transparent",
+                      color: isNo ? C.red : C.muted,
+                      fontSize:14, fontWeight:700, cursor:"pointer", transition:"all 0.1s",
+                    }}
+                  >✕ Pass</button>
+                  <button
+                    onClick={() => setReviewVote(r.id, "yes")}
+                    aria-label="Want it"
+                    style={{
+                      flex:1, padding:"7px 10px", borderRadius:8,
+                      border: `1.5px solid ${isYes ? C.green : C.border}`,
+                      background: isYes ? C.greenSoft : "transparent",
+                      color: isYes ? C.green : C.muted,
+                      fontSize:14, fontWeight:700, cursor:"pointer", transition:"all 0.1s",
+                    }}
+                  >♥ Want it</button>
+                  {(r.website || r.mapsUri) && (
+                    <a href={r.website || r.mapsUri} target="_blank" rel="noopener noreferrer"
+                      aria-label="View menu"
+                      style={{ flexShrink:0, display:"inline-flex", alignItems:"center", gap:4, padding:"7px 12px", borderRadius:8, border:`1.5px solid ${C.border}`, color:C.muted, fontSize:11, fontWeight:700, textDecoration:"none" }}>
+                      <Ico name="menu" size={12} /> Menu
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Fixed bottom submit bar */}
+        <div style={{
+          position:"fixed", bottom:0, left:0, right:0,
+          padding:"12px 16px calc(12px + env(safe-area-inset-bottom)) 16px",
+          background: `linear-gradient(to top, ${C.backdrop} 60%, rgba(244,247,250,0))`,
+          zIndex: 100,
+        }}>
+          <div style={{ maxWidth:500, margin:"0 auto" }}>
+            <Btn onClick={() => finish(votes)} big disabled={submitting}>
+              {submitting ? "Submitting…" : "Submit Final Picks →"}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
