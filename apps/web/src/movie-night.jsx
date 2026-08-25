@@ -572,6 +572,137 @@ function CardTrailerHeader({ movie, posterUrl, backdropUrl }) {
   );
 }
 
+// The presentational body of a movie card — trailer header + all the info.
+// Shared by the swipe deck (inside the draggable wrapper) and the review-screen
+// "Details" modal, so both show identical content and a playable trailer.
+function MovieCardBody({ movie, posterUrl, tmdbEntry, liveStreaming, matches }) {
+  const streamingIds = liveStreaming ?? movie.streaming;
+  return (
+    <div style={{ background: C.card, borderRadius:20, overflow:"hidden", boxShadow:"0 16px 40px rgba(15,23,42,0.12)", border:`1px solid ${C.border}` }}>
+      {/* Trailer thumbnail / inline player */}
+      <CardTrailerHeader movie={movie} posterUrl={posterUrl} backdropUrl={movie.backdrop} />
+
+      {/* Info */}
+      <div style={{ padding:"16px 20px 20px" }}>
+        <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:6, flexWrap:"wrap" }}>
+          <h2 style={{ margin:0, fontSize:22, fontWeight:700, color:C.text, letterSpacing:-0.3, lineHeight:1.2 }}>{movie.title}</h2>
+          <span style={{ color:C.muted, fontSize:14, flexShrink:0 }}>{movie.year}</span>
+          {movie.duration > 0 && (
+            <span style={{ color:C.muted, fontSize:14, flexShrink:0 }}>
+              · {Math.floor(movie.duration / 60) > 0 ? `${Math.floor(movie.duration / 60)}h ` : ""}{movie.duration % 60}m
+            </span>
+          )}
+          {movie.mpaa && (
+            <span style={{ fontSize:11, border:`1px solid ${C.border}`, borderRadius:4, padding:"1px 6px", color:C.muted, fontWeight:600, flexShrink:0 }}>{movie.mpaa}</span>
+          )}
+        </div>
+
+        {/* Ratings */}
+        <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+          <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:`${C.gold}1a`, border:`1px solid ${C.gold}55`, borderRadius:8, padding:"3px 10px", fontSize:13, color:C.gold, fontWeight:700 }}>
+            <Ico name="star" size={13} filled /> {movie.imdb}<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>IMDb</span>
+          </span>
+          <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:`${C.red}1a`, border:`1px solid ${C.red}55`, borderRadius:8, padding:"3px 10px", fontSize:13, color:C.red, fontWeight:700 }}>
+            <Ico name="tomato" size={13} /> {movie.rt}%<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>RT</span>
+          </span>
+        </div>
+
+        {movie.director && (
+          <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>dir. {movie.director}</div>
+        )}
+
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+          {movie.genres.map(g => (
+            <span key={g} style={{ background:C.accentSoft, color:C.accent, borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:600, border:`1px solid ${C.accent}44` }}>{g}</span>
+          ))}
+        </div>
+
+        {matches?.length > 0 && (
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+            {matches.slice(0, 4).map((m, i) => (
+              <span key={i} style={{
+                background: m.kind === "service" ? `${m.color}22` : C.greenSoft,
+                color: m.kind === "service" ? m.color : C.green,
+                border: `1px solid ${m.kind === "service" ? `${m.color}55` : `${C.green}55`}`,
+                borderRadius: 6,
+                padding: "2px 8px",
+                fontSize: 11,
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}>
+                <Ico name="sparkle" size={11} />
+                {m.label}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <p style={{ margin:"0 0 12px", color:C.text, fontSize:13.5, lineHeight:1.6, opacity:0.85 }}>{movie.description}</p>
+
+        <div style={{ marginBottom:10 }}>
+          <div style={{ fontSize:11, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:1 }}>Cast</div>
+          <div style={{ fontSize:13, color:C.text }}>{movie.actors.slice(0,5).join(" · ")}</div>
+        </div>
+
+        {movie.awards && (
+          <div style={{ fontSize:11, color:C.gold, marginBottom:10, display:"flex", alignItems:"flex-start", gap:6 }}>
+            <Ico name="trophy" size={14} style={{ marginTop:1 }} />
+            <span>{movie.awards}</span>
+          </div>
+        )}
+
+        {streamingIds.length > 0 ? (
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+            {streamingIds.map(s => {
+              const svc = SERVICES.find(sv => sv.id === s);
+              if (!svc) return null;
+              const isFlatrate = tmdbEntry?.flatrate?.includes(s);
+              const isRentOnly = !isFlatrate && tmdbEntry?.rent?.includes(s);
+              return (
+                <span key={s} style={{ background:`${svc.color}22`, color:svc.color, border:`1px solid ${svc.color}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
+                  {svc.label}
+                  {isRentOnly && <span style={{ fontSize:10, opacity:0.8, fontWeight:400 }}>· rent</span>}
+                  {isFlatrate && <span style={{ fontSize:10, opacity:0.8, fontWeight:400 }}>· free</span>}
+                </span>
+              );
+            })}
+          </div>
+        ) : liveStreaming === undefined ? (
+          <div style={{ fontSize:11, color:C.muted }}>Loading streaming info…</div>
+        ) : (
+          <div style={{ fontSize:11, color:C.muted }}>Not available to stream or rent</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Full-screen modal that floats a card over the review list. Backdrop click or
+// the ✕ closes it. Used by both review screens' "Details" buttons so people can
+// see everything (and play the trailer) without leaving the review.
+function DetailsModal({ onClose, children }) {
+  return (
+    <div onClick={onClose} style={{
+      position:"fixed", inset:0, zIndex:1000,
+      background:"rgba(15,23,42,0.55)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)",
+      overflowY:"auto", display:"flex", alignItems:"flex-start", justifyContent:"center",
+      padding:"56px 12px calc(24px + env(safe-area-inset-bottom))",
+    }}>
+      <button onClick={onClose} aria-label="Close details" style={{
+        position:"fixed", top:"calc(env(safe-area-inset-top, 0px) + 12px)", right:16, zIndex:1001,
+        width:36, height:36, borderRadius:"50%", background:C.card, border:`1px solid ${C.border}`,
+        color:C.text, fontSize:18, fontWeight:700, cursor:"pointer", display:"flex",
+        alignItems:"center", justifyContent:"center", boxShadow:"0 2px 12px rgba(15,23,42,0.25)",
+      }}>✕</button>
+      <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:420, margin:"auto" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index, total, matches }) {
   const cardRef = useRef(null);
   const dragRef = useRef({ x: 0, y: 0, dragging: false, startX: 0, startY: 0 });
@@ -643,8 +774,6 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
 
   const rot = drag.x * 0.08;
   const opacity = Math.max(0, 1 - Math.abs(drag.x) / 300);
-  // Prefer live TMDB data; fall back to hardcoded while loading
-  const streamingIds = liveStreaming ?? movie.streaming;
 
   return (
     <div
@@ -675,104 +804,7 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
         <div style={{ position:"absolute", top:20, right:20, zIndex:20, border:`2.5px solid ${C.red}`, borderRadius:8, padding:"7px 18px", transform:"rotate(13deg)", color:C.red, fontSize:24, fontWeight:800, letterSpacing:2 }}>SKIP</div>
       )}
 
-      <div style={{ background: C.card, borderRadius:20, overflow:"hidden", boxShadow:"0 16px 40px rgba(15,23,42,0.12)", border:`1px solid ${C.border}` }}>
-        {/* Trailer thumbnail / inline player */}
-        <CardTrailerHeader movie={movie} posterUrl={posterUrl} backdropUrl={movie.backdrop} />
-
-        {/* Info */}
-        <div style={{ padding:"16px 20px 20px" }}>
-          <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:6, flexWrap:"wrap" }}>
-            <h2 style={{ margin:0, fontSize:22, fontWeight:700, color:C.text, letterSpacing:-0.3, lineHeight:1.2 }}>{movie.title}</h2>
-            <span style={{ color:C.muted, fontSize:14, flexShrink:0 }}>{movie.year}</span>
-            {movie.duration > 0 && (
-              <span style={{ color:C.muted, fontSize:14, flexShrink:0 }}>
-                · {Math.floor(movie.duration / 60) > 0 ? `${Math.floor(movie.duration / 60)}h ` : ""}{movie.duration % 60}m
-              </span>
-            )}
-            {movie.mpaa && (
-              <span style={{ fontSize:11, border:`1px solid ${C.border}`, borderRadius:4, padding:"1px 6px", color:C.muted, fontWeight:600, flexShrink:0 }}>{movie.mpaa}</span>
-            )}
-          </div>
-
-          {/* Ratings */}
-          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-            <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:`${C.gold}1a`, border:`1px solid ${C.gold}55`, borderRadius:8, padding:"3px 10px", fontSize:13, color:C.gold, fontWeight:700 }}>
-              <Ico name="star" size={13} filled /> {movie.imdb}<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>IMDb</span>
-            </span>
-            <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:`${C.red}1a`, border:`1px solid ${C.red}55`, borderRadius:8, padding:"3px 10px", fontSize:13, color:C.red, fontWeight:700 }}>
-              <Ico name="tomato" size={13} /> {movie.rt}%<span style={{ fontSize:10, opacity:0.7, fontWeight:600 }}>RT</span>
-            </span>
-          </div>
-
-          {movie.director && (
-            <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>dir. {movie.director}</div>
-          )}
-
-          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-            {movie.genres.map(g => (
-              <span key={g} style={{ background:C.accentSoft, color:C.accent, borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:600, border:`1px solid ${C.accent}44` }}>{g}</span>
-            ))}
-          </div>
-
-          {matches?.length > 0 && (
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-              {matches.slice(0, 4).map((m, i) => (
-                <span key={i} style={{
-                  background: m.kind === "service" ? `${m.color}22` : C.greenSoft,
-                  color: m.kind === "service" ? m.color : C.green,
-                  border: `1px solid ${m.kind === "service" ? `${m.color}55` : `${C.green}55`}`,
-                  borderRadius: 6,
-                  padding: "2px 8px",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                }}>
-                  <Ico name="sparkle" size={11} />
-                  {m.label}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <p style={{ margin:"0 0 12px", color:C.text, fontSize:13.5, lineHeight:1.6, opacity:0.85 }}>{movie.description}</p>
-
-          <div style={{ marginBottom:10 }}>
-            <div style={{ fontSize:11, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:1 }}>Cast</div>
-            <div style={{ fontSize:13, color:C.text }}>{movie.actors.slice(0,5).join(" · ")}</div>
-          </div>
-
-          {movie.awards && (
-            <div style={{ fontSize:11, color:C.gold, marginBottom:10, display:"flex", alignItems:"flex-start", gap:6 }}>
-              <Ico name="trophy" size={14} style={{ marginTop:1 }} />
-              <span>{movie.awards}</span>
-            </div>
-          )}
-
-          {streamingIds.length > 0 ? (
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-              {streamingIds.map(s => {
-                const svc = SERVICES.find(sv => sv.id === s);
-                if (!svc) return null;
-                const isFlatrate = tmdbEntry?.flatrate?.includes(s);
-                const isRentOnly = !isFlatrate && tmdbEntry?.rent?.includes(s);
-                return (
-                  <span key={s} style={{ background:`${svc.color}22`, color:svc.color, border:`1px solid ${svc.color}55`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
-                    {svc.label}
-                    {isRentOnly && <span style={{ fontSize:10, opacity:0.8, fontWeight:400 }}>· rent</span>}
-                    {isFlatrate && <span style={{ fontSize:10, opacity:0.8, fontWeight:400 }}>· free</span>}
-                  </span>
-                );
-              })}
-            </div>
-          ) : liveStreaming === undefined ? (
-            <div style={{ fontSize:11, color:C.muted }}>Loading streaming info…</div>
-          ) : (
-            <div style={{ fontSize:11, color:C.muted }}>Not available to stream or rent</div>
-          )}
-        </div>
-      </div>
+      <MovieCardBody movie={movie} posterUrl={posterUrl} tmdbEntry={tmdbEntry} liveStreaming={liveStreaming} matches={matches} />
 
       {/* Progress */}
       <div style={{ textAlign:"center", marginTop:12, color:C.muted, fontSize:13 }}>{index + 1} of {total}</div>
@@ -2530,7 +2562,7 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
   // tiebreaker on the results screen when no movie reaches a clear majority. Selected
   // on the Review screen so the user can compare across the full deck.
   const [myPassionPick, setMyPassionPick] = useState(null);
-  const [reviewTrailer, setReviewTrailer] = useState(null); // { id, title } | null
+  const [detailsMovie, setDetailsMovie] = useState(null); // movie object shown in the Details modal, or null
   // Two-phase flow: "swiping" → "review" → submit
   const [phase, setPhase] = useState("swiping");
   const [submitting, setSubmitting] = useState(false);
@@ -2810,9 +2842,9 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
                 </div>
                 <div style={{ display:"flex", gap:6 }}>
                   <button
-                    onClick={() => setReviewTrailer({ id: movie.id, title: movie.title })}
+                    onClick={() => setDetailsMovie(movie)}
                     style={{ flex:1, padding:"6px 10px", borderRadius:8, border:`1.5px solid ${C.border}`, background:"transparent", color:C.muted, fontSize:11, fontWeight:700, cursor:"pointer" }}
-                  >▶ Trailer</button>
+                  >Details</button>
                   {profile?.userKey && (
                     <button
                       onClick={() => toggleHidden(movie.id)}
@@ -2829,7 +2861,7 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
                         transition: "all 0.15s",
                       }}
                     >
-                      {hidden ? "⊘ Hidden" : "⊘ Hide"}
+                      {hidden ? "⊘ Won't show again" : "⊘ Don't show again"}
                     </button>
                   )}
                 </div>
@@ -2838,7 +2870,17 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
           );
         })}
 
-        {reviewTrailer && <TrailerModal movieId={reviewTrailer.id} title={reviewTrailer.title} onClose={() => setReviewTrailer(null)} />}
+        {detailsMovie && (
+          <DetailsModal onClose={() => setDetailsMovie(null)}>
+            <MovieCardBody
+              movie={detailsMovie}
+              posterUrl={detailsMovie.poster}
+              tmdbEntry={tmdbData[detailsMovie.id]}
+              liveStreaming={tmdbData[detailsMovie.id]?.streaming}
+              matches={computeMatches(detailsMovie)}
+            />
+          </DetailsModal>
+        )}
 
         {/* Fixed bottom submit bar */}
         <div style={{
@@ -4300,6 +4342,7 @@ function FoodSwipingScreen({ session, userId, onDone }) {
   // Two-phase flow: "swiping" → "review" → submit, for both live and async
   // (mirrors NetPix).
   const [phase, setPhase] = useState("swiping");
+  const [detailsRestaurant, setDetailsRestaurant] = useState(null); // restaurant shown in the Details modal, or null
   const deck = useRef(session.restaurants || []);
   const restaurants = deck.current;
   const current = restaurants[idx];
@@ -4398,18 +4441,22 @@ function FoodSwipingScreen({ session, userId, onDone }) {
                       fontSize:14, fontWeight:700, cursor:"pointer", transition:"all 0.1s",
                     }}
                   >♥ Want it</button>
-                  {(r.website || r.mapsUri) && (
-                    <a href={r.website || r.mapsUri} target="_blank" rel="noopener noreferrer"
-                      aria-label="View menu"
-                      style={{ flexShrink:0, display:"inline-flex", alignItems:"center", gap:4, padding:"7px 12px", borderRadius:8, border:`1.5px solid ${C.border}`, color:C.muted, fontSize:11, fontWeight:700, textDecoration:"none" }}>
-                      <Ico name="menu" size={12} /> Menu
-                    </a>
-                  )}
+                  <button
+                    onClick={() => setDetailsRestaurant(r)}
+                    aria-label="View details"
+                    style={{ flexShrink:0, display:"inline-flex", alignItems:"center", gap:4, padding:"7px 12px", borderRadius:8, border:`1.5px solid ${C.border}`, background:"transparent", color:C.muted, fontSize:11, fontWeight:700, cursor:"pointer" }}
+                  >Details</button>
                 </div>
               </div>
             </div>
           );
         })}
+
+        {detailsRestaurant && (
+          <DetailsModal onClose={() => setDetailsRestaurant(null)}>
+            <RestaurantCard r={detailsRestaurant} index={0} total={1} hideCount />
+          </DetailsModal>
+        )}
 
         {/* Fixed bottom submit bar */}
         <div style={{
