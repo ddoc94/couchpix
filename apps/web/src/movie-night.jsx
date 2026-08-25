@@ -416,47 +416,6 @@ function MiniQR({ text, size = 200 }) {
 }
 
 // ─── Swipe Card ───────────────────────────────────────────────────────────────
-function TrailerModal({ movieId, title, onClose }) {
-  const [ytKey, setYtKey] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-
-  useEffect(() => {
-    fetch(`${TMDB_PROXY}/videos?id=${movieId}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.key) setYtKey(d.key);
-        else setNotFound(true);
-        setLoading(false);
-      })
-      .catch(() => { setNotFound(true); setLoading(false); });
-  }, [movieId]);
-
-  return (
-    <div
-      onClick={onClose}
-      style={{ position:"fixed", inset:0, zIndex:1000, background:"rgba(0,0,0,0.92)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:20 }}
-    >
-      <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:640 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-          <div style={{ color:"#fff", fontSize:16, fontWeight:700 }}>{title}</div>
-          <button onClick={onClose} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:"50%", width:36, height:36, color:"#fff", fontSize:18, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
-        </div>
-        {loading && <div style={{ color:C.muted, textAlign:"center", padding:40 }}>Loading trailer…</div>}
-        {notFound && <div style={{ color:C.muted, textAlign:"center", padding:40 }}>No trailer available</div>}
-        {ytKey && (
-          <iframe
-            src={`https://www.youtube.com/embed/${ytKey}?autoplay=1`}
-            style={{ width:"100%", aspectRatio:"16/9", border:"none", borderRadius:12 }}
-            allow="autoplay; fullscreen"
-            allowFullScreen
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
 // Cache trailer keys (movieId -> key|null) so swiping back/forward is instant and
 // upcoming cards can be prefetched. fetchTrailerKey dedupes in-flight requests.
 const trailerKeyCache = new Map();
