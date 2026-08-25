@@ -3205,6 +3205,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   // an optimistic override, cleared once our write comes back. Declared before any
   // conditional return so hook order stays stable.
   const [pendingChoice, setPendingChoice] = useState(null);
+  const [detailsMovie, setDetailsMovie] = useState(null); // movie shown in the Details modal, or null
   // The round number we mounted with. When the host retries after "No matches"
   // (doNewRound bumps `round` and regenerates the deck), OTHER devices see the
   // round climb and get pulled back into swiping — otherwise a guest sitting on
@@ -3506,22 +3507,39 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
                     </div>
                   )}
                 </div>
-                {!alreadyHearted ? (
-                  <button onClick={() => submitHeart(movie.id)} style={{
-                    alignSelf:"flex-start", padding:"8px 18px", borderRadius:20, fontSize:13, fontWeight:700,
-                    cursor:"pointer", border:`1.5px solid ${C.accent}`, background:C.accentSoft, color:C.accent,
-                    transition:"all 0.15s",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = C.accent; e.currentTarget.style.color = "#fff"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = C.accentSoft; e.currentTarget.style.color = C.accent; }}
-                  >♥ Heart this</button>
-                ) : isHearted ? (
-                  <span style={{ fontSize:13, color:C.accent, fontWeight:700 }}>♥ Your pick</span>
-                ) : null}
+                <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                  {!alreadyHearted ? (
+                    <button onClick={() => submitHeart(movie.id)} style={{
+                      padding:"8px 18px", borderRadius:20, fontSize:13, fontWeight:700,
+                      cursor:"pointer", border:`1.5px solid ${C.accent}`, background:C.accentSoft, color:C.accent,
+                      transition:"all 0.15s",
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.background = C.accent; e.currentTarget.style.color = "#fff"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = C.accentSoft; e.currentTarget.style.color = C.accent; }}
+                    >♥ Heart this</button>
+                  ) : isHearted ? (
+                    <span style={{ fontSize:13, color:C.accent, fontWeight:700 }}>♥ Your pick</span>
+                  ) : null}
+                  <button onClick={() => setDetailsMovie(movie)} style={{
+                    padding:"8px 14px", borderRadius:20, fontSize:13, fontWeight:700, cursor:"pointer",
+                    border:`1.5px solid ${C.border}`, background:"transparent", color:C.muted,
+                  }}>Details</button>
+                </div>
               </div>
             </div>
           );
         })}
+
+        {detailsMovie && (
+          <DetailsModal onClose={() => setDetailsMovie(null)}>
+            <MovieCardBody
+              movie={detailsMovie}
+              posterUrl={detailsMovie.poster}
+              tmdbEntry={tmdbData[detailsMovie.id]}
+              liveStreaming={tmdbData[detailsMovie.id]?.streaming}
+            />
+          </DetailsModal>
+        )}
       </div>
     );
   }
@@ -4464,6 +4482,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   // optimistic override until our write lands. Declared up here so hook order
   // stays stable across the waiting/heart/final returns below.
   const [pendingChoice, setPendingChoice] = useState(null);
+  const [detailsRestaurant, setDetailsRestaurant] = useState(null); // restaurant shown in the Details modal, or null
   const navedRef = useRef(false); // ensure we navigate to a new round only once
 
   // Poll KV. heartPool/heartRound live on the session so every device shares the
@@ -4616,14 +4635,23 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
                   </div>
                 )}
               </div>
-              {!alreadyHearted ? (
-                <button onClick={() => submitHeart(r.id)} style={{ flexShrink:0, padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:700, cursor:"pointer", border:`1.5px solid ${C.accent}`, background:C.accentSoft, color:C.accent }}>♥ Heart</button>
-              ) : isHearted ? (
-                <span style={{ flexShrink:0, fontSize:13, color:C.accent, fontWeight:700 }}>♥ Your pick</span>
-              ) : null}
+              <div style={{ flexShrink:0, display:"flex", flexDirection:"column", gap:6, alignItems:"flex-end" }}>
+                {!alreadyHearted ? (
+                  <button onClick={() => submitHeart(r.id)} style={{ padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:700, cursor:"pointer", border:`1.5px solid ${C.accent}`, background:C.accentSoft, color:C.accent }}>♥ Heart</button>
+                ) : isHearted ? (
+                  <span style={{ fontSize:13, color:C.accent, fontWeight:700 }}>♥ Your pick</span>
+                ) : null}
+                <button onClick={() => setDetailsRestaurant(r)} style={{ padding:"6px 12px", borderRadius:20, fontSize:12, fontWeight:700, cursor:"pointer", border:`1.5px solid ${C.border}`, background:"transparent", color:C.muted }}>Details</button>
+              </div>
             </div>
           );
         })}
+
+        {detailsRestaurant && (
+          <DetailsModal onClose={() => setDetailsRestaurant(null)}>
+            <RestaurantCard r={detailsRestaurant} index={0} total={1} hideCount />
+          </DetailsModal>
+        )}
       </div>
     );
   }
