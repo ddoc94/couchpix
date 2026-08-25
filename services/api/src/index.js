@@ -100,10 +100,11 @@ export default {
         for (const k of list.keys) {
           accounts++;
           const p = await env.SESSIONS.get(k.name, "json");
-          if (!p) continue;
-          const m = p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 7) : "unknown";
+          // Bucket every counted account by month (unparseable/undated → "unknown")
+          // so signupsByMonth always sums to `accounts`.
+          const m = (p && p.createdAt) ? new Date(p.createdAt).toISOString().slice(0, 7) : "unknown";
           signupsByMonth[m] = (signupsByMonth[m] || 0) + 1;
-          if (Array.isArray(p.sessions)) totalSavedSessions += p.sessions.length;
+          if (p && Array.isArray(p.sessions)) totalSavedSessions += p.sessions.length;
         }
         cursor = list.list_complete ? null : list.cursor;
       } while (cursor);
