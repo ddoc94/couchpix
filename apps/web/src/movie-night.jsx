@@ -155,7 +155,8 @@ async function putProfile(userKey, data) {
   // of the email, and the email itself only needs to live on THIS device (in
   // localStorage) — for the display-name fallback, avatar initial, and profile
   // screen. Keeping it off the server means a profile read can never leak an email.
-  const { email, ...safe } = data || {};
+  const safe = { ...(data || {}) };
+  delete safe.email;
   try {
     await fetch(`${TMDB_PROXY}/user/${userKey}`, {
       method: "PUT",
@@ -535,7 +536,7 @@ function CardTrailerHeader({ movie, posterUrl, backdropUrl }) {
 // Shared by the swipe deck (inside the draggable wrapper) and the review-screen
 // "Details" modal, so both show identical content and a playable trailer.
 function MovieCardBody({ movie, posterUrl, tmdbEntry, liveStreaming, matches }) {
-  const streamingIds = liveStreaming ?? movie.streaming;
+  const streamingIds = liveStreaming ?? movie.streaming ?? [];
   return (
     <div style={{ background: C.card, borderRadius:20, overflow:"hidden", boxShadow:"0 16px 40px rgba(15,23,42,0.12)", border:`1px solid ${C.border}` }}>
       {/* Trailer thumbnail / inline player */}
@@ -571,7 +572,7 @@ function MovieCardBody({ movie, posterUrl, tmdbEntry, liveStreaming, matches }) 
         )}
 
         <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-          {movie.genres.map(g => (
+          {(movie.genres || []).map(g => (
             <span key={g} style={{ background:C.accentSoft, color:C.accent, borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:600, border:`1px solid ${C.accent}44` }}>{g}</span>
           ))}
         </div>
@@ -602,7 +603,7 @@ function MovieCardBody({ movie, posterUrl, tmdbEntry, liveStreaming, matches }) 
 
         <div style={{ marginBottom:10 }}>
           <div style={{ fontSize:11, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:1 }}>Cast</div>
-          <div style={{ fontSize:13, color:C.text }}>{movie.actors.slice(0,5).join(" · ")}</div>
+          <div style={{ fontSize:13, color:C.text }}>{(movie.actors || []).slice(0,5).join(" · ")}</div>
         </div>
 
         {movie.awards && (
@@ -732,7 +733,6 @@ function SwipeCard({ movie, posterUrl, liveStreaming, tmdbEntry, onSwipe, index,
   };
 
   const rot = drag.x * 0.08;
-  const opacity = Math.max(0, 1 - Math.abs(drag.x) / 300);
 
   return (
     <div
