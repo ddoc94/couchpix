@@ -1033,6 +1033,7 @@ export default function MovieNightApp() {
           ...s,
           restaurants: [],
           foodReady: false,
+          chosenId: undefined, // a fresh round is not yet confirmed
           heartPool: undefined,
           heartRound: undefined,
           participants: (s.participants || []).map(p => ({ ...p, prefsDone: false, votes: {}, done: false, heart: undefined, cuisines: [], vetoCuisines: [] })),
@@ -3253,6 +3254,12 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   // a mirror that re-syncs on each poll.
   useAdaptivePoll(session?.id, (s) => {
         setLatestSession(s);
+        // Any participant locking in tonight's pick (chosenId, written by confirmWatch)
+        // closes the session for EVERYONE — show the same confirmation and head home.
+        if (s.chosenId) {
+          const chosen = (s.movies || []).find(m => m.id === s.chosenId);
+          if (chosen) setConfirmedTitle(chosen.title);
+        }
         // Host started a fresh round on another device → follow them into swiping.
         if (typeof s.round === "number" && s.round > roundRef.current && !navedRef.current) {
           navedRef.current = true;
@@ -3426,6 +3433,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
         // Clear the previous round's heart pool/round too — otherwise the next
         // results pass maps stale movie ids against the new deck and shows an
         // empty/garbage heart list.
+        stored.chosenId = undefined; // a fresh round is not yet confirmed
         stored.heartPool = undefined;
         stored.heartRound = undefined;
         stored.participants = stored.participants.map(p => ({ ...p, votes: {}, done: false, heart: undefined }));
@@ -4514,6 +4522,12 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   // same canonical round state; local state mirrors it on each poll.
   useAdaptivePoll(session.id, (s) => {
     setLatest(s);
+    // Any participant locking in the spot (chosenId, written by confirmEat) closes
+    // the session for EVERYONE — show the same confirmation and head home.
+    if (s.chosenId) {
+      const chosen = (s.restaurants || []).find(r => r.id === s.chosenId);
+      if (chosen) setConfirmedName(chosen.name);
+    }
     if (Array.isArray(s.heartPool)) setHeartPool(s.heartPool);
     // A new heart round (often written by another device) must also clear this
     // device's local `myHeart`, or it stays stuck on "already hearted" and the
