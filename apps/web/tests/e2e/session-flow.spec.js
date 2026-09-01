@@ -154,10 +154,12 @@ test('visiting the session URL goes straight to join screen', async ({ page, req
   const session = await seedSession(request);
 
   await page.goto(`/?session=${session.id}`);
-  // Code input should be pre-filled — confirms the app parsed the URL param and loaded the join screen
-  const codeInput = page.locator('input[maxlength="6"]');
-  await expect(codeInput).toBeVisible();
-  await expect(codeInput).toHaveValue(session.id);
+  // Link arrivals get the invited view: "Join {host}'s session", the code shown
+  // as static text (not an editable field), and a name input — confirms the app
+  // parsed the URL param and loaded the join screen for an invitee.
+  await expect(page.getByRole('heading', { name: /Join Alice's session/i })).toBeVisible();
+  await expect(page.getByText(session.id)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Join Session/i })).toBeVisible();
 });
 
 // ─── Preferences screen ───────────────────────────────────────────────────────
@@ -187,7 +189,9 @@ test('organizer sees streaming and duration fields', async ({ page, request }) =
   await page.evaluate((s) => {
     sessionStorage.setItem('mn_screen', JSON.stringify('prefs'));
     sessionStorage.setItem('mn_session', JSON.stringify(s));
-    sessionStorage.setItem('mn_userid', JSON.stringify(s.adminId));
+    // mn_userid lives in localStorage (survives PWA force-quit); setting it in
+    // sessionStorage would be ignored, so the seeded admin wouldn't be recognized.
+    localStorage.setItem('mn_userid', JSON.stringify(s.adminId));
   }, session);
   await page.reload();
 
@@ -210,12 +214,16 @@ test('non-admin does not see streaming/duration/language fields', async ({ page,
   await page.evaluate((s) => {
     sessionStorage.setItem('mn_screen', JSON.stringify('prefs'));
     sessionStorage.setItem('mn_session', JSON.stringify(s));
-    sessionStorage.setItem('mn_userid', JSON.stringify('user-bob'));
+    localStorage.setItem('mn_userid', JSON.stringify('user-bob')); // see note in the admin-fields test
   }, session);
   await page.reload();
 
   await expect(page.getByRole('button', { name: 'Action' }).first()).toBeVisible();
-  await expect(page.getByText(/streaming services/i)).not.toBeVisible();
+  // Non-admins pick only genres — none of the admin-only fields. Assert on
+  // "movie length" rather than "streaming services": the guest intro note names
+  // "streaming services" ("the host already set the streaming services…"), so
+  // matching that text would be a false positive.
+  await expect(page.getByText(/movie length/i)).not.toBeVisible();
   await expect(page.getByText(/audio language/i)).not.toBeVisible();
 });
 

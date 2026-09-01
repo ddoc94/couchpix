@@ -7,7 +7,7 @@ export default defineConfig({
   workers: 1, // sequential — KV sessions are shared state
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'https://netpix-app.vercel.app',
+    baseURL: 'https://couchpix.com',
     actionTimeout: 15_000,
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
