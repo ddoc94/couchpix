@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, rankFinalists, movieAgreedPool, foodAgreedPool, ACTIVITIES, pickRandomQuestion, drawFromBag } from "./utils.js";
 
@@ -643,15 +644,19 @@ function MovieCardBody({ movie, posterUrl, tmdbEntry, liveStreaming, matches }) 
 // the ✕ closes it. Used by both review screens' "Details" buttons so people can
 // see everything (and play the trailer) without leaving the review.
 function DetailsModal({ onClose, children }) {
-  return (
+  // Portal to <body> so the overlay is a true top-level layer. Rendered inline it
+  // sits inside the scrolling container's stacking context, so the app's floating
+  // Reset button (a root-level sibling) painted OVER the modal's ✕. z-index above
+  // the Reset/Back pills (z 50).
+  return createPortal(
     <div onClick={onClose} style={{
-      position:"fixed", inset:0, zIndex:1000,
+      position:"fixed", inset:0, zIndex:2000,
       background:"rgba(15,23,42,0.55)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)",
       overflowY:"auto", display:"flex", alignItems:"flex-start", justifyContent:"center",
       padding:"56px 12px calc(24px + env(safe-area-inset-bottom))",
     }}>
       <button onClick={onClose} aria-label="Close details" style={{
-        position:"fixed", top:"calc(env(safe-area-inset-top, 0px) + 12px)", right:16, zIndex:1001,
+        position:"fixed", top:"calc(env(safe-area-inset-top, 0px) + 12px)", right:16, zIndex:2001,
         width:36, height:36, borderRadius:"50%", background:C.card, border:`1px solid ${C.border}`,
         color:C.text, fontSize:18, fontWeight:700, cursor:"pointer", display:"flex",
         alignItems:"center", justifyContent:"center", boxShadow:"0 2px 12px rgba(15,23,42,0.25)",
@@ -659,7 +664,8 @@ function DetailsModal({ onClose, children }) {
       <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:420, margin:"auto" }}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1119,7 +1125,7 @@ export default function MovieNightApp() {
             boxShadow: "0 2px 8px rgba(15,23,42,0.06)",
             whiteSpace: "nowrap",
           }}
-        >↩ Reset</button>
+        ><Ico name="refresh" size={13} /> Reset</button>
       )}
     </div>
   );
