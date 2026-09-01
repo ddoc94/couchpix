@@ -3199,6 +3199,31 @@ function SavedMoviesScreen({ profile, setProfile, session, onContinue, onSkip })
   );
 }
 
+// Confirmation shown after the group locks in tonight's pick ("We're watching
+// this" / "We're going here"). Gives clear feedback that the choice registered,
+// then returns home — via the button, or automatically after a few seconds.
+function PickConfirmedModal({ message, onHome }) {
+  useEffect(() => {
+    const t = setTimeout(onHome, 4500);
+    return () => clearTimeout(t);
+  }, [onHome]);
+  return createPortal(
+    <div style={{
+      position:"fixed", inset:0, zIndex:2000, background:"rgba(15,23,42,0.6)",
+      backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:24,
+    }}>
+      <div style={{ background:C.card, borderRadius:20, padding:"32px 24px", maxWidth:360, width:"100%", textAlign:"center", boxShadow:"0 20px 60px rgba(15,23,42,0.3)", display:"flex", flexDirection:"column", alignItems:"center", gap:14 }}>
+        <div style={{ width:64, height:64, borderRadius:"50%", background:C.greenSoft, border:`2px solid ${C.green}`, display:"flex", alignItems:"center", justifyContent:"center", color:C.green, fontSize:32, fontWeight:800 }}>✓</div>
+        <h2 style={{ margin:0, fontSize:20 }}>You're all set!</h2>
+        <p style={{ color:C.muted, margin:0, fontSize:14.5, lineHeight:1.5 }}>{message}</p>
+        <Btn onClick={onHome} big>Back to home →</Btn>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome }) {
   const [latestSession, setLatestSession] = useState(session);
   const [phase, setPhase] = useState("waiting"); // "waiting" | "heart" | "final"
@@ -3212,6 +3237,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   // conditional return so hook order stays stable.
   const [pendingChoice, setPendingChoice] = useState(null);
   const [detailsMovie, setDetailsMovie] = useState(null); // movie shown in the Details modal, or null
+  const [confirmedTitle, setConfirmedTitle] = useState(null); // set once the group locks in a pick → shows the confirmation + goes home
   // The round number we mounted with. When the host retries after "No matches"
   // (doNewRound bumps `round` and regenerates the deck), OTHER devices see the
   // round climb and get pulled back into swiping — otherwise a guest sitting on
@@ -3562,12 +3588,15 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   const chosenId = pendingChoice ?? latestSession.chosenId ?? null;
   const winner = ranked.find(m => m.id === chosenId) || ranked[0];
   const runnersUp = ranked.filter(m => m.id !== winner.id).slice(0, 3);
-  // Promote a runner-up for EVERYONE (atomic top-level set on the session).
-  const chooseMovie = (id) => {
-    setPendingChoice(id);
-    if (profile?.userKey) setWatchStatus(id, "watched");
-    patchSession(latestSession.id, { set: { chosenId: id } })
-      .then(s => { if (s) { setLatestSession(s); setPendingChoice(null); } });
+  // Lock in tonight's pick — the winner OR a promoted runner-up. Records the
+  // choice for EVERYONE (atomic top-level chosenId on the session), marks it
+  // watched when signed in, then shows the confirmation and heads home.
+  const confirmWatch = (movie) => {
+    setPendingChoice(movie.id);
+    if (profile?.userKey) setWatchStatus(movie.id, "watched");
+    patchSession(latestSession.id, { set: { chosenId: movie.id } })
+      .then(s => { if (s) setLatestSession(s); });
+    setConfirmedTitle(movie.title);
   };
   const finalMovies = ranked; // saveForLater() looks movies up here
 
@@ -3603,13 +3632,6 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     putProfile(profile.userKey, updated);
   };
 
-  // Look up the current status of a result movie from the live profile state
-  const watchStatusOf = (movieId) => {
-    if (!profile?.userKey) return null;
-    const entry = (profile.sessions || []).find(s => s.id === latestSession.id);
-    return entry?.finalMovies?.find(m => m.id === movieId)?.watchStatus || null;
-  };
-
   // Save a final movie to profile.savedLater for proposal in a future session.
   const saveForLater = (movieId) => {
     if (!profile?.userKey) return;
@@ -3632,27 +3654,14 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     putProfile(profile.userKey, updated);
   };
 
-  // "We're watching this" + "Save for later" for a given movie — rendered on the
-  // winner AND each runner-up so the group can override the top pick and watch a
-  // runner-up instead. Signed-in users only (watch status lives on the profile).
-  const watchButtons = (movie) => {
+  // "Save for later" for a given movie (signed-in only — savedLater lives on the
+  // profile). The "We're watching this" confirm action is a separate prominent
+  // button so it works signed-out too.
+  const saveForLaterButton = (movie) => {
     if (!profile?.userKey) return null;
-    const status = watchStatusOf(movie.id);
-    const isWatched = status === "watched";
     const saved = isSavedForLater(movie.id);
     return (
       <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
-        <button
-          onClick={() => setWatchStatus(movie.id, isWatched ? "unconfirmed" : "watched")}
-          style={{
-            background: isWatched ? C.greenSoft : "transparent",
-            border: `1px solid ${isWatched ? C.green : C.border}`,
-            color: isWatched ? C.green : C.muted,
-            borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, cursor:"pointer",
-          }}
-        >
-          {isWatched ? "✓ Watching tonight" : "We're watching this →"}
-        </button>
         <button
           onClick={() => saved ? removeSavedForLater(movie.id) : saveForLater(movie.id)}
           style={{
@@ -3729,8 +3738,13 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
                 return svc ? <span key={s} style={{ background:`${svc.color}22`, color:svc.color, border:`1px solid ${svc.color}55`, borderRadius:5, padding:"1px 6px", fontSize:10, fontWeight:600 }}>{svc.label}</span> : null;
               })}
             </div>
-            {/* "We're watching this" + "Save for later" — signed-in users only. */}
-            {watchButtons(movie)}
+            {/* Lock in the winner as tonight's pick → confirmation → home. Works
+                signed-out; "Save for later" below is signed-in only. */}
+            <button
+              onClick={() => confirmWatch(movie)}
+              style={{ marginTop:10, width:"100%", background:C.green, border:"none", color:"#fff", borderRadius:10, padding:"10px 12px", fontSize:14, fontWeight:800, cursor:"pointer" }}
+            >We're watching this →</button>
+            {saveForLaterButton(movie)}
           </div>
         </div>
       ))}
@@ -3753,7 +3767,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
                     when signed in it also records the watch status. */}
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
                   <button
-                    onClick={() => chooseMovie(movie.id)}
+                    onClick={() => confirmWatch(movie)}
                     style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.muted, borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, cursor:"pointer" }}
                   >We're watching this →</button>
                 </div>
@@ -3767,6 +3781,10 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
         <Btn onClick={doNewRound} outline>New Round</Btn>
         <Btn onClick={onHome} outline>New Session</Btn>
       </div>
+
+      {confirmedTitle && (
+        <PickConfirmedModal message={`You're watching ${confirmedTitle} tonight. Enjoy!`} onHome={onHome} />
+      )}
     </div>
   );
 }
@@ -4489,6 +4507,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   // stays stable across the waiting/heart/final returns below.
   const [pendingChoice, setPendingChoice] = useState(null);
   const [detailsRestaurant, setDetailsRestaurant] = useState(null); // restaurant shown in the Details modal, or null
+  const [confirmedName, setConfirmedName] = useState(null); // set once the group locks in a spot → shows the confirmation + goes home
   const navedRef = useRef(false); // ensure we navigate to a new round only once
 
   // Poll KV. heartPool/heartRound live on the session so every device shares the
@@ -4672,11 +4691,13 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   const chosenId = pendingChoice ?? latest.chosenId ?? null;
   const winner = ranked.find(r => r.id === chosenId) || ranked[0];
   const runnersUp = ranked.filter(r => r.id !== winner.id).slice(0, 3);
-  // Promote for EVERYONE (atomic top-level set on the session).
-  const choosePlace = (id) => {
-    setPendingChoice(id);
-    patchSession(latest.id, { set: { chosenId: id } })
-      .then(s => { if (s) { setLatest(s); setPendingChoice(null); } });
+  // Lock in tonight's spot — the winner OR a promoted runner-up. Records the
+  // choice for EVERYONE (atomic top-level chosenId), then confirms and heads home.
+  const confirmEat = (r) => {
+    setPendingChoice(r.id);
+    patchSession(latest.id, { set: { chosenId: r.id } })
+      .then(s => { if (s) setLatest(s); });
+    setConfirmedName(r.name);
   };
 
   return (
@@ -4688,6 +4709,12 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
       </div>
 
       <RestaurantCard r={winner} index={0} total={1} hideCount />
+
+      {/* Lock in the winning spot → confirmation → home. */}
+      <button
+        onClick={() => confirmEat(winner)}
+        style={{ width:"100%", maxWidth:420, margin:"0 auto", background:C.green, border:"none", color:"#fff", borderRadius:10, padding:"12px", fontSize:15, fontWeight:800, cursor:"pointer" }}
+      >We're going here →</button>
 
       {runnersUp.length > 0 && (
         <div>
@@ -4703,7 +4730,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
                   <div style={{ fontSize:12, color:C.muted }}><Ico name="star" size={11} filled color={C.gold} style={{ marginRight:3 }} />{r.rating} · {r.distanceMi} mi{hearts ? ` · ♥ ${hearts}` : ""}</div>
                   <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:7 }}>
                     <button
-                      onClick={() => choosePlace(r.id)}
+                      onClick={() => confirmEat(r)}
                       style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.muted, borderRadius:8, padding:"5px 9px", fontSize:11, fontWeight:700, cursor:"pointer" }}
                     >We're going here →</button>
                     {(r.website || r.mapsUri) && (
@@ -4724,6 +4751,10 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
         <Btn onClick={onRestart} flex>New Round</Btn>
         <Btn onClick={onHome} outline flex>Home</Btn>
       </div>
+
+      {confirmedName && (
+        <PickConfirmedModal message={`You're going to ${confirmedName}. Enjoy!`} onHome={onHome} />
+      )}
     </div>
   );
 }
