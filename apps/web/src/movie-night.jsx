@@ -177,6 +177,14 @@ const TMDB_PROXY = "https://netpix-proxy.netpix2026.workers.dev";
 // worker accepts any [A-Z0-9]{4,10} for /session/{id}, this only narrows
 // what NEW codes can contain.
 const SESSION_CODE_ALPHA = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+// Fire a GA4 custom event for the per-user product funnel (create → prefs →
+// swipe → confirm). No-op if gtag is absent (ad-blocked, or in tests). The
+// authoritative per-session started/finished counts come from the Worker via the
+// Measurement Protocol; these client events show WHERE in the flow people drop.
+function track(name, params) {
+  try { if (window.gtag) window.gtag("event", name, params || {}); } catch { /* ignore */ }
+}
+
 function generateSessionCode(length = 6) {
   let out = "";
   for (let i = 0; i < length; i++) {
@@ -1806,6 +1814,7 @@ function SetupScreen({ userId, userName, setUserName, activity = ACTIVITIES.MOVI
       ...(isAhead && { asyncMode: true, expectedCount: headcount }),
       round: 1,
     };
+    track("mn_session_create", { activity, mode: isAhead ? "async" : "live", headcount });
     putSession(session).then(() => onCreated(session));
   };
 
@@ -2177,6 +2186,7 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
 
   const submit = () => {
     if (!genres.length) return alert("Please select at least one genre");
+    track("mn_prefs_submit", { activity: "netpix", role: isAdmin ? "admin" : "guest" });
     const myPatch = { id: userId, genres, vetoes, prefsDone: true };
     const adminCriteria = { services, subscriptionOnly, duration, languages, yearFrom, yearTo, allowedRatings };
 
@@ -2654,6 +2664,7 @@ function SwipingScreen({ session, userId, profile, setProfile, onDone }) {
   const submitFinal = () => {
     if (submitting) return;
     setSubmitting(true);
+    track("mn_swipe_complete", { activity: "netpix" });
     // Atomic per-participant merge — no full-session PUT, so a simultaneous
     // submitter can't overwrite our done:true with their stale snapshot (which
     // used to strand ResultsScreen on "Waiting for everyone…"). The movie deck is
@@ -3602,6 +3613,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   const confirmWatch = (movie) => {
     setPendingChoice(movie.id);
     if (profile?.userKey) setWatchStatus(movie.id, "watched");
+    track("mn_pick_confirm", { activity: "netpix", was_runner_up: movie.id !== (ranked[0] && ranked[0].id) });
     patchSession(latestSession.id, { set: { chosenId: movie.id } })
       .then(s => { if (s) setLatestSession(s); });
     setConfirmedTitle(movie.title);
@@ -4020,6 +4032,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   const submit = () => {
     if (!cuisines.length) return alert("Pick at least one cuisine");
     if (isAdmin && !/^\d{5}$/.test(zip.trim())) return alert("Enter a valid 5-digit ZIP code");
+    track("mn_prefs_submit", { activity: "foodpix", role: isAdmin ? "admin" : "guest" });
     const myPatch = { id: userId, cuisines, vetoCuisines: vetoes, prefsDone: true };
     const adminCriteria = {
       zip: zip.trim(), mode, minRating, distanceMi, allowedPrices,
@@ -4384,6 +4397,7 @@ function FoodSwipingScreen({ session, userId, onDone }) {
   const finish = (finalVotes) => {
     if (submitting) return;
     setSubmitting(true);
+    track("mn_swipe_complete", { activity: "foodpix" });
     // Atomic per-participant merge (see SwipingScreen.submitFinal). Restaurants
     // are already persisted from discovery, so no full-session re-write.
     patchParticipant(session.id, { id: userId, votes: finalVotes, done: true })
@@ -4709,6 +4723,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   // choice for EVERYONE (atomic top-level chosenId), then confirms and heads home.
   const confirmEat = (r) => {
     setPendingChoice(r.id);
+    track("mn_pick_confirm", { activity: "foodpix", was_runner_up: r.id !== winner.id });
     patchSession(latest.id, { set: { chosenId: r.id } })
       .then(s => { if (s) setLatest(s); });
     setConfirmedName(r.name);

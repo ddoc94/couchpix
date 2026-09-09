@@ -75,6 +75,27 @@ const GENRE_MAP = {
   Romance: 10749, "Sci-Fi": 878, Thriller: 53, Western: 37, Family: 10751,
 };
 
+const GA4_MEASUREMENT_ID = "G-G7QGK5CN1J";
+// Fire a GA4 event server-side via the Measurement Protocol so it lands in the
+// SAME property as the client page views — authoritative, per-session (one event
+// per session, not per device), and ad-blocker-proof. Uses the session id as the
+// client_id so a session's started/finished events associate. No-op without the
+// secret; never throws (analytics must not break a session write).
+async function sendGA4(env, clientId, name, params) {
+  if (!env || !env.GA4_API_SECRET) return;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 1500);
+    await fetch(`https://www.google-analytics.com/mp/collect?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${env.GA4_API_SECRET}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: String(clientId || "server"), events: [{ name, params: params || {} }] }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+  } catch { /* swallow — telemetry is best-effort */ }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -688,8 +709,9 @@ export default {
 // up on every device on the next poll instead of waiting out KV's edge cache.
 // An alarm deletes the data ~24h after the last write to mirror the old TTL.
 export class SessionRoom {
-  constructor(state) {
+  constructor(state, env) {
     this.state = state;
+    this.env = env; // for the GA4 Measurement Protocol secret
   }
 
   // Plan-ahead (async) sessions live for 7 days; live sessions for 24h.
@@ -707,10 +729,18 @@ export class SessionRoom {
       const body = await request.text();
       const bad = badBody(body);
       if (bad) return bad;
+      const existed = await this.state.storage.get("data");
       await this.state.storage.put("data", body);
       let parsed = null;
       try { parsed = JSON.parse(body); } catch {}
       await this.state.storage.setAlarm(Date.now() + this.ttlMsFor(parsed));
+      // First write for this id = a session was created. One event per session.
+      if (!existed && parsed) {
+        await sendGA4(this.env, parsed.id, "mn_session_started", {
+          activity: parsed.activity || "unknown",
+          mode: parsed.asyncMode ? "async" : "live",
+        });
+      }
       return json({ ok: true });
     }
     // POST { claim: "<name>" } — atomically claim a named lock (e.g. deck generation)
@@ -759,12 +789,13 @@ export class SessionRoom {
       if (p && !p.id) return json({ error: "participant.id required" }, 400);
       if (!p && !crit && !set) return json({ error: "nothing to patch" }, 400);
 
-      let status = 200, out = null;
+      let status = 200, out = null, finished = null;
       await this.state.blockConcurrencyWhile(async () => {
         const raw = await this.state.storage.get("data");
         if (!raw) { status = 404; return; }
         let session;
         try { session = JSON.parse(raw); } catch { status = 500; return; }
+        const hadChosen = session.chosenId != null;
         if (p) {
           if (!Array.isArray(session.participants)) session.participants = [];
           const i = session.participants.findIndex(x => x.id === p.id);
@@ -777,6 +808,12 @@ export class SessionRoom {
         if (set && typeof set === "object") {
           for (const k of SETTABLE) if (k in set) session[k] = set[k];
         }
+        // chosenId went unset → set: the group locked in tonight's pick. Capture
+        // it here (inside the lock) and fire the event AFTER, so the GA4 round-trip
+        // never holds the DO lock.
+        if (!hadChosen && session.chosenId != null) {
+          finished = { id: session.id, activity: session.activity || "unknown", mode: session.asyncMode ? "async" : "live" };
+        }
         out = JSON.stringify(session);
         await this.state.storage.put("data", out);
         await this.state.storage.setAlarm(Date.now() + this.ttlMsFor(session));
@@ -784,6 +821,9 @@ export class SessionRoom {
 
       if (status === 404) return json({ error: "not found" }, 404);
       if (status === 500) return json({ error: "corrupt session" }, 500);
+      if (finished) {
+        await sendGA4(this.env, finished.id, "mn_session_finished", { activity: finished.activity, mode: finished.mode });
+      }
       return new Response(out, { headers: { "Content-Type": "application/json", ...CORS } });
     }
     return json({ error: "method not allowed" }, 405);
