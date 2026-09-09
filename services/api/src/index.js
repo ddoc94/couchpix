@@ -789,13 +789,14 @@ export class SessionRoom {
       if (p && !p.id) return json({ error: "participant.id required" }, 400);
       if (!p && !crit && !set) return json({ error: "nothing to patch" }, 400);
 
-      let status = 200, out = null, finished = null;
+      let status = 200, out = null, finished = null, deckReady = null;
       await this.state.blockConcurrencyWhile(async () => {
         const raw = await this.state.storage.get("data");
         if (!raw) { status = 404; return; }
         let session;
         try { session = JSON.parse(raw); } catch { status = 500; return; }
         const hadChosen = session.chosenId != null;
+        const hadDeck = session.moviesGenerated === true || session.foodReady === true;
         if (p) {
           if (!Array.isArray(session.participants)) session.participants = [];
           const i = session.participants.findIndex(x => x.id === p.id);
@@ -819,6 +820,17 @@ export class SessionRoom {
             participants: Array.isArray(session.participants) ? session.participants.length : 0,
           };
         }
+        // Deck just generated (moviesGenerated/foodReady went true): the group is
+        // fully assembled, so this is the real group size for ANY session that got
+        // this far — not just finished ones. Fires once per session.
+        if (!hadDeck && (session.moviesGenerated === true || session.foodReady === true)) {
+          deckReady = {
+            id: session.id,
+            activity: session.activity || "unknown",
+            mode: session.asyncMode ? "async" : "live",
+            participants: Array.isArray(session.participants) ? session.participants.length : 0,
+          };
+        }
         out = JSON.stringify(session);
         await this.state.storage.put("data", out);
         await this.state.storage.setAlarm(Date.now() + this.ttlMsFor(session));
@@ -826,6 +838,11 @@ export class SessionRoom {
 
       if (status === 404) return json({ error: "not found" }, 404);
       if (status === 500) return json({ error: "corrupt session" }, 500);
+      if (deckReady) {
+        await sendGA4(this.env, deckReady.id, "mn_deck_ready", {
+          activity: deckReady.activity, mode: deckReady.mode, participants: deckReady.participants,
+        });
+      }
       if (finished) {
         await sendGA4(this.env, finished.id, "mn_session_finished", {
           activity: finished.activity, mode: finished.mode, participants: finished.participants,
