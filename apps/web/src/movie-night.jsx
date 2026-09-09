@@ -844,6 +844,14 @@ export default function MovieNightApp() {
   // duplicate participant. Sessions that already know this device (joined before
   // signing in) keep using the device id so nobody splits mid-session.
   const profileId = profile?.userKey ? `u_${profile.userKey.slice(0, 12)}` : null;
+
+  // Tell GA4 which signed-in user this is (User-ID) so a returning person is
+  // recognized across devices, not just per-browser. Uses the same pseudonymous
+  // id as sessions (no email). Cleared on sign-out.
+  useEffect(() => {
+    try { if (window.gtag) window.gtag("set", { user_id: profileId }); } catch { /* ignore */ }
+  }, [profileId]);
+
   // Resolved against a SPECIFIC session, not React state: on link entry the state
   // hasn't loaded yet, and deciding too early would fork a signed-in user into a
   // second participant in sessions that already knew their device.
@@ -882,6 +890,7 @@ export default function MovieNightApp() {
       const me = { id: myId, name: nameToUse, votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
       const updated = await patchParticipant(sid, me);
       const joined = updated || { ...s, participants: [...(s.participants || []), me] };
+      track("mn_session_join", { activity: joined.activity, mode: joined.asyncMode ? "async" : "live" });
       setSession(joined);
       rememberSession(joined);
       // Live sessions → lobby; plan-ahead sessions → straight to wherever this
@@ -1384,12 +1393,14 @@ function SignInScreen({ onSignedIn, onCancel }) {
       if (!prof) {
         prof = { email: clean, userKey, displayName: cleanName, createdAt: Date.now(), sessions: [] };
         await putProfile(userKey, prof);
+        track("sign_up", { method: "email" }); // GA4 standard event — a new account
       } else {
         // Existing profile — keep their sessions, but update email/key and let the
         // newly-entered name overwrite the saved one (a returning user might want to
         // change how they appear in sessions).
         prof = { ...prof, email: clean, userKey, displayName: cleanName };
         await putProfile(userKey, prof);
+        track("login", { method: "email" }); // GA4 standard event — a returning sign-in
       }
       onSignedIn(prof);
     } catch (e) {
@@ -2482,6 +2493,7 @@ function JoinScreen({ session, userId, resolveId, userName, setUserName, onJoine
       }
       const me = { id: myId, name: localName.trim(), votes: {}, done: false, genres: [], vetoes: [], passionPick: null, prefsDone: false };
       const updated = await patchParticipant(sid, me);
+      track("mn_session_join", { activity: s.activity, mode: s.asyncMode ? "async" : "live" });
       setJoining(false);
       onJoined(updated || { ...s, participants: [...s.participants, me] });
     });
@@ -3356,6 +3368,17 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
         setPhase("final");
       }
   });
+
+  // Fire a GA4 funnel event once when this device reaches the FINAL results
+  // (done swiping + heart rounds resolved) — lets the funnel distinguish "reached
+  // results" from "confirmed a pick" (the abandon-at-the-decision step).
+  const resultsViewedRef = useRef(false);
+  useEffect(() => {
+    if (phase === "final" && !resultsViewedRef.current) {
+      resultsViewedRef.current = true;
+      track("mn_results_view", { activity: "netpix", agreed_count: movieAgreedPool(latestSession).length });
+    }
+  }, [phase]);
 
   // ── Persist this session to the signed-in profile (fires once when results finalize) ──
   // Declared at the top of the component, before any conditional returns, so the hook
@@ -4591,6 +4614,15 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
       setPhase("final");
     }
   });
+
+  // GA4 funnel event — fired once when this device reaches the FINAL results.
+  const resultsViewedRef = useRef(false);
+  useEffect(() => {
+    if (phase === "final" && !resultsViewedRef.current) {
+      resultsViewedRef.current = true;
+      track("mn_results_view", { activity: "foodpix", agreed_count: foodAgreedPool(latest).length });
+    }
+  }, [phase]);
 
   const participants = latest.participants || [];
   const restaurants = latest.restaurants || [];

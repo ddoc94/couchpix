@@ -812,7 +812,12 @@ export class SessionRoom {
         // it here (inside the lock) and fire the event AFTER, so the GA4 round-trip
         // never holds the DO lock.
         if (!hadChosen && session.chosenId != null) {
-          finished = { id: session.id, activity: session.activity || "unknown", mode: session.asyncMode ? "async" : "live" };
+          finished = {
+            id: session.id,
+            activity: session.activity || "unknown",
+            mode: session.asyncMode ? "async" : "live",
+            participants: Array.isArray(session.participants) ? session.participants.length : 0,
+          };
         }
         out = JSON.stringify(session);
         await this.state.storage.put("data", out);
@@ -822,7 +827,9 @@ export class SessionRoom {
       if (status === 404) return json({ error: "not found" }, 404);
       if (status === 500) return json({ error: "corrupt session" }, 500);
       if (finished) {
-        await sendGA4(this.env, finished.id, "mn_session_finished", { activity: finished.activity, mode: finished.mode });
+        await sendGA4(this.env, finished.id, "mn_session_finished", {
+          activity: finished.activity, mode: finished.mode, participants: finished.participants,
+        });
       }
       return new Response(out, { headers: { "Content-Type": "application/json", ...CORS } });
     }
