@@ -77,18 +77,35 @@ export function applyStreamingFilter(pool, criteria, tmdbData) {
   return filtered.slice(0, 10);
 }
 
+// ─── Ranked-preference scoring (async) ────────────────────────────────────────
+// In plan-ahead (async) sessions the deck is defined by the host's picks, and every
+// participant RANKS that shared list of genres/cuisines instead of picking their own.
+// A participant's ordered picks map to points by position: 1st = 2, 2nd = 1, 3rd = 0.
+// (Beyond the third slot everything is 0 — only the top preferences steer the winner.)
+export const RANK_POINTS = [2, 1, 0];
+export const rankWeight = (idx) => RANK_POINTS[idx] ?? 0;
+
 // ─── Results decision logic ───────────────────────────────────────────────────
 // Order the agreed finalists for the results screen, picking a single winner.
 // Most hearts wins first (hearts are the primary narrowing signal); ties break
-// by higher rating, then by how many user-picked criteria the item matches
+// by higher rating, then by how well the item matches user-picked criteria
 // (genres for movies, cuisines for restaurants — summed across all participants).
-export function rankFinalists(items, participants, { ratingOf, tagsOf, pickedOf }) {
+//
+// `weightOf(p, tag, idx)` scores a single matched pick. It defaults to 1 per match
+// (the live/legacy "count how many people picked a matching tag" tiebreak). Async
+// results pass a position-weighted variant (see rankWeight) so a finalist matching
+// people's TOP-ranked genres/cuisines outranks one matching their lowest.
+export function rankFinalists(items, participants, { ratingOf, tagsOf, pickedOf, weightOf }) {
   const heartOf = it => participants.filter(p => p.heart === it.id).length;
+  const w = weightOf || (() => 1);
   const matchOf = (it) => {
     const tags = (tagsOf(it) || []).map(t => String(t).toLowerCase());
     if (!tags.length) return 0;
-    return participants.reduce((sum, p) =>
-      sum + (pickedOf(p) || []).filter(t => tags.includes(String(t).toLowerCase())).length, 0);
+    return participants.reduce((sum, p) => {
+      const picked = pickedOf(p) || [];
+      return sum + picked.reduce((s2, t, idx) =>
+        tags.includes(String(t).toLowerCase()) ? s2 + w(p, t, idx) : s2, 0);
+    }, 0);
   };
   return [...items].sort((a, b) =>
     heartOf(b) - heartOf(a) ||

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
-import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, rankFinalists, movieAgreedPool, foodAgreedPool, ACTIVITIES, pickRandomQuestion, drawFromBag } from "./utils.js";
+import { GENRES, LANGUAGES, SERVICES, PROVIDER_MAP, applyStreamingFilter, rankFinalists, rankWeight, movieAgreedPool, foodAgreedPool, ACTIVITIES, pickRandomQuestion, drawFromBag } from "./utils.js";
 
 // ─── Palette & Theme ───────────────────────────────────────────────────────────
 // Blueprint: cool, technical, fresh. Soft blue-gray base with electric blue accent
@@ -72,6 +72,7 @@ const ICON_PATHS = {
   hourglass: <path d="M6 3h12M6 21h12M8 3v4l4 5 4-5V3M8 21v-4l4-5 4 5v4" />,
   menu: <path d="M6 3h9l3 3v15H6zM9 9h6M9 12.5h6M9 16h4" />,
   external: <path d="M14 4h6v6M20 4l-8 8M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />,
+  grip: <><circle cx="9" cy="6" r="1.1" /><circle cx="15" cy="6" r="1.1" /><circle cx="9" cy="12" r="1.1" /><circle cx="15" cy="12" r="1.1" /><circle cx="9" cy="18" r="1.1" /><circle cx="15" cy="18" r="1.1" /></>,
 };
 
 function Ico({ name, size = 18, color = "currentColor", stroke = 1.6, filled = false, style }) {
@@ -318,12 +319,18 @@ function readHiddenMovieIds() {
 }
 
 async function discoverMovies(session) {
-  // Vetoes win over picks: if anyone vetoes a genre, it's excluded entirely
-  // — even if another participant picked it. This is the "absolute no" semantic.
-  const allVetoes = [...new Set((session.participants || []).flatMap(p => p.vetoes || []))];
+  // Async (plan-ahead): the deck is defined by the HOST's ranked genres alone —
+  // guests only re-rank that same set (which steers results, not the deck), and there
+  // are no vetoes. Live: union everyone's picks, minus any vetoed genre (absolute no).
+  const admin = (session.participants || []).find(p => p.id === session.adminId);
+  const allVetoes = session.asyncMode
+    ? []
+    : [...new Set((session.participants || []).flatMap(p => p.vetoes || []))];
   const vetoSet = new Set(allVetoes);
-  const allGenres = [...new Set((session.participants || []).flatMap(p => p.genres || []))]
-    .filter(g => !vetoSet.has(g)); // strip vetoed genres from the pick union
+  const allGenres = session.asyncMode
+    ? (admin?.genres || [])
+    : [...new Set((session.participants || []).flatMap(p => p.genres || []))]
+        .filter(g => !vetoSet.has(g)); // strip vetoed genres from the pick union
   const duration = session.criteria?.duration || "";
   const languages = session.criteria?.languages?.length ? session.criteria.languages : ["en"];
   const yearFrom = session.criteria?.yearFrom ?? 1980;
@@ -2046,8 +2053,11 @@ function PrefsIntroNote({ session, userId, activity }) {
   if (isAdmin && !hostSetup) return null; // live host: nothing to explain
 
   const host = session?.participants?.find(p => p.id === session.adminId)?.name;
+  const isAsync = !!session?.asyncMode;
   const text = hostSetup
     ? "Make selections below to set up the session. Then you can share it with friends."
+    : isAsync
+    ? `${host || "The host"} picked the ${isFood ? "cuisines" : "genres"} for this session — drag to rank them by your preference.`
     : `${host || "The host"} already set the ${isFood ? "location, budget, and timing" : "streaming services, release years, and ratings"} for this session — just add your ${isFood ? "cuisines" : "genres"} below.`;
 
   return (
@@ -2068,11 +2078,18 @@ const YEAR_MIN = 1920;
 function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady }) {
   const isAdmin = session.adminId === userId;
   const participantCount = session.participants?.length || 1;
-  const maxGenres = participantCount > 3 ? 2 : 3;
+  // Async (plan-ahead): the host picks + RANKS exactly 3 genres (which define the
+  // deck), and guests just re-rank that same shared list — no veto, no own picks.
+  const isAsync = !!session.asyncMode;
+  const isAsyncHost = isAsync && isAdmin;
+  const isAsyncGuest = isAsync && !isAdmin;
+  const hostGenres = session.participants?.find(p => p.id === session.adminId)?.genres || [];
+  const maxGenres = isAsync ? 3 : (participantCount > 3 ? 2 : 3);
   const currentYear = new Date().getFullYear();
 
-  const [genres, setGenres] = useState([]);
-  const [vetoes, setVetoes] = useState([]); // up to 2 vetoed genres
+  const [genres, setGenres] = useState([]);   // chip selection (live + async host)
+  const [ranking, setRanking] = useState(isAsyncGuest ? hostGenres : []); // ordered (async)
+  const [vetoes, setVetoes] = useState([]); // up to 2 vetoed genres (live only)
   const [services, setServices] = useState([]);
   const [subscriptionOnly, setSubscriptionOnly] = useState(false);
   const [duration, setDuration] = useState(null); // null | "short" | "long"
@@ -2096,6 +2113,26 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
   // would latch the ref to false forever — silently discarding generated decks.
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [latestSession, setLatestSession] = useState(session);
+
+  // Keep the async ranking list in sync. Host: mirror the chip selection (preserving
+  // the order already chosen, appending newly-picked genres). Guest: seed from the
+  // host's genres once, then leave the guest's own reordering alone (a poll must not
+  // reset it — the check treats any permutation of the host set as already-seeded).
+  useEffect(() => {
+    if (!isAsyncHost) return;
+    setRanking(prev => {
+      const kept = prev.filter(g => genres.includes(g));
+      const added = genres.filter(g => !kept.includes(g));
+      return [...kept, ...added];
+    });
+  }, [genres, isAsyncHost]);
+  const hostGenresKey = hostGenres.join("|");
+  useEffect(() => {
+    if (!isAsyncGuest) return;
+    setRanking(prev =>
+      prev.length === hostGenres.length && prev.every(g => hostGenres.includes(g))
+        ? prev : hostGenres);
+  }, [hostGenresKey, isAsyncGuest]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const MAX_VETOES = 1;
   const toggleGenre = g => {
@@ -2137,7 +2174,18 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
         // can't be clobbered by this write. Matters most in plan-ahead sessions
         // where generation can overlap with late joins.
         patchSession(sess.id, { set: { movies: deck, moviesGenerated: true } })
-          .then(updated => { if (mountedRef.current) onMoviesReady(updated || { ...sess, movies: deck, moviesGenerated: true }); });
+          .then(updated => {
+            if (!mountedRef.current) return;
+            const next = updated || { ...sess, movies: deck, moviesGenerated: true };
+            // The device that GENERATES the deck isn't necessarily ready to swipe: the
+            // async host stays on the share screen (explicit "Start swiping"), and a
+            // guest who triggered generation before ranking must keep ranking. Only
+            // advance a generator who has submitted and isn't the async host — everyone
+            // else just gets the deck cached locally and advances via the poll instead.
+            const isAsyncAdmin = sess.asyncMode && sess.adminId === userId;
+            if (submittedRef.current && !isAsyncAdmin) onMoviesReady(next);
+            else setLatestSession(next);
+          });
       });
     };
 
@@ -2170,16 +2218,22 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
     }
 
     setLatestSession(s);
-    if (s.movies?.length > 0) { onMoviesReady(s); return; }
-    if (s.moviesGenerated) { onMoviesReady(s); return; }
+    // Advance to swiping only once I've finished my own prefs — in async the deck can
+    // be ready before a guest has ranked (it's built from the host's picks), so a bare
+    // "movies exist" check would yank them off the ranking screen. The async host is
+    // never auto-advanced: they leave the share screen deliberately (see below).
+    const meDone = submittedRef.current || s.participants?.find(p => p.id === userId)?.prefsDone;
+    const isAsyncAdmin = s.asyncMode && s.adminId === userId;
+    if ((s.movies?.length > 0 || s.moviesGenerated) && meDone && !isAsyncAdmin) { onMoviesReady(s); return; }
 
     const allDone = s.participants.every(p => p.prefsDone);
     if (s.asyncMode) {
-      // Plan-ahead: ANY device may generate once the roster is full and everyone
-      // has answered — the admin might not reopen the app for days. The DO-side
-      // claim elects exactly one generator across concurrently-polling devices.
-      const rosterFull = (s.participants?.length || 0) >= (s.expectedCount || 2);
-      if (allDone && rosterFull && !generatingRef.current) {
+      // Plan-ahead: the deck is defined ENTIRELY by the host's ranked genres, so it can
+      // generate the moment the host has answered — guests then join and swipe an
+      // already-built deck (no waiting for the roster to fill). ANY device may run it;
+      // the DO-side claim elects exactly one generator across concurrent pollers.
+      const hostDone = !!s.participants?.find(p => p.id === s.adminId)?.prefsDone;
+      if (hostDone && !s.moviesGenerated && !generatingRef.current) {
         claimSessionLock(session.id, "movies").then(ok => { if (ok) generateAndAdvance(s); });
       }
     } else if (s.adminId === userId) {
@@ -2195,10 +2249,14 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
     ?.filter(p => p.id !== userId)
     .every(p => p.prefsDone) ?? true); // true when solo (no others to wait for)
 
+  // In async, genres are an ORDERED ranking (host's picks, or the guest's re-rank of
+  // the host set); vetoes don't exist. Live keeps the unordered pick set + veto.
+  const finalGenres = isAsync ? ranking : genres;
+
   const submit = () => {
-    if (!genres.length) return alert("Please select at least one genre");
+    if (!finalGenres.length) return alert("Please select at least one genre");
     track("mn_prefs_submit", { activity: "netpix", role: isAdmin ? "admin" : "guest" });
-    const myPatch = { id: userId, genres, vetoes, prefsDone: true };
+    const myPatch = { id: userId, genres: finalGenres, vetoes: isAsync ? [] : vetoes, prefsDone: true };
     const adminCriteria = { services, subscriptionOnly, duration, languages, yearFrom, yearTo, allowedRatings };
 
     if (!isAdmin || session.asyncMode) {
@@ -2219,7 +2277,7 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
       const updated = {
         ...s,
         participants: s.participants.map(p =>
-          p.id === userId ? { ...p, genres, vetoes, prefsDone: true } : p
+          p.id === userId ? { ...p, genres: finalGenres, vetoes, prefsDone: true } : p
         ),
         criteria: { ...s.criteria, ...adminCriteria },
       };
@@ -2237,12 +2295,23 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
     || (latestSession.participants?.length || 0) >= (latestSession.expectedCount || 2);
   const myEntry = latestSession.participants?.find(p => p.id === userId);
   const iAmDone = submitted || myEntry?.prefsDone;
+  const deckReady = (latestSession.movies?.length || 0) > 0 || latestSession.moviesGenerated;
 
   if (iAmDone) {
     return (
       <div style={{ paddingTop: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
         <div style={{ marginBottom:4 }}><Ico name="hourglass" size={40} color={C.muted} stroke={1.5} /></div>
         <h2 style={{ margin: 0 }}>{latestSession.asyncMode && !rosterFull ? "Invite your crew" : "Waiting for everyone…"}</h2>
+        {/* Async host: the deck is built from your picks the moment you submit, so you
+            can swipe right away — but stay here first so you can share the link. */}
+        {isAsyncHost && deckReady && (
+          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
+            <Btn big onClick={() => onMoviesReady(latestSession)}>Start swiping →</Btn>
+            <div style={{ textAlign: "center", fontSize: 12, color: C.muted }}>
+              Your movie list is ready. Share the link below, then swipe whenever you like.
+            </div>
+          </div>
+        )}
         <div style={{ width: "100%", background: C.card, borderRadius: 12, padding: 16, border: `1px solid ${C.border}` }}>
           {latestSession.participants?.map(p => (
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
@@ -2254,8 +2323,8 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
             </div>
           ))}
         </div>
-        {latestSession.asyncMode && !(allDone && rosterFull) && <AsyncWaitingExtras session={latestSession} userId={userId} onAction={poke} />}
-        {allDone && rosterFull && <div style={{ color: C.muted, fontSize: 13 }}>Generating movie list…</div>}
+        {latestSession.asyncMode && <AsyncWaitingExtras session={latestSession} userId={userId} onAction={poke} />}
+        {!latestSession.asyncMode && allDone && rosterFull && <div style={{ color: C.muted, fontSize: 13 }}>Generating movie list…</div>}
       </div>
     );
   }
@@ -2321,40 +2390,68 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
 
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 13, color: C.muted }}>What are you in the mood for?</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Pick up to {maxGenres} genre{maxGenres > 1 ? "s" : ""}</div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+          {isAsyncGuest ? "Drag to rank the genres by preference"
+            : isAsyncHost ? `Pick ${maxGenres} genres, then drag to rank them`
+            : `Pick up to ${maxGenres} genre${maxGenres > 1 ? "s" : ""}`}
+        </div>
       </div>
 
       <PrefsIntroNote session={session} userId={userId} activity={ACTIVITIES.MOVIES} />
 
-      <Field label={`Genres (pick up to ${maxGenres})`} required>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {GENRES.map(g => (
-            <Chip key={g} active={genres.includes(g)} onClick={() => toggleGenre(g)}
-              disabled={!genres.includes(g) && genres.length >= maxGenres}>{g}</Chip>
-          ))}
-        </div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{genres.length}/{maxGenres} selected</div>
-      </Field>
+      {/* Async guest: no picker — just rank the host's shared genres. */}
+      {isAsyncGuest ? (
+        <Field label="Rank by preference" required>
+          <RankList order={ranking} onChange={setRanking} />
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+            1st counts most toward the winner, 3rd the least.
+          </div>
+        </Field>
+      ) : (
+        <>
+          <Field label={`Genres (pick ${maxGenres})`} required>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {GENRES.map(g => (
+                <Chip key={g} active={genres.includes(g)} onClick={() => toggleGenre(g)}
+                  disabled={!genres.includes(g) && genres.length >= maxGenres}>{g}</Chip>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{genres.length}/{maxGenres} selected</div>
+          </Field>
 
-      <Field label="Veto (1 genre)">
-        <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>
-          Block one genre entirely — vetoes override anyone else's pick.
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {GENRES.map(g => (
-            <Chip
-              key={g}
-              active={vetoes.includes(g)}
-              onClick={() => toggleVeto(g)}
-              disabled={!vetoes.includes(g) && vetoes.length >= MAX_VETOES}
-              accentColor={C.red}
-            >{g}</Chip>
-          ))}
-        </div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
-          {vetoes.length ? `Vetoed: ${vetoes[0]}` : "No veto"}
-        </div>
-      </Field>
+          {/* Async host: rank the genres you just picked (they define everyone's deck). */}
+          {isAsyncHost && ranking.length > 1 && (
+            <Field label="Rank your genres">
+              <RankList order={ranking} onChange={setRanking} />
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+                1st counts most toward the winner, 3rd the least.
+              </div>
+            </Field>
+          )}
+
+          {!isAsync && (
+            <Field label="Veto (1 genre)">
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>
+                Block one genre entirely — vetoes override anyone else's pick.
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {GENRES.map(g => (
+                  <Chip
+                    key={g}
+                    active={vetoes.includes(g)}
+                    onClick={() => toggleVeto(g)}
+                    disabled={!vetoes.includes(g) && vetoes.length >= MAX_VETOES}
+                    accentColor={C.red}
+                  >{g}</Chip>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                {vetoes.length ? `Vetoed: ${vetoes[0]}` : "No veto"}
+              </div>
+            </Field>
+          )}
+        </>
+      )}
 
       {isAdmin && (
         <>
@@ -2464,7 +2561,9 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
           Waiting for other participants to submit selections…
         </div>
       )}
-      <Btn onClick={submit} big disabled={!genres.length || (isAdmin && !otherParticipantsDone)}>Confirm Preferences →</Btn>
+      <Btn onClick={submit} big disabled={(isAsyncHost ? genres.length < maxGenres : !finalGenres.length) || (isAdmin && !otherParticipantsDone)}>
+        {isAsyncGuest ? "Confirm Ranking →" : "Confirm Preferences →"}
+      </Btn>
     </div>
   );
 }
@@ -3397,7 +3496,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     const movies = latestSession.movies || [];
     const yesMovies = movieAgreedPool(latestSession);
 
-    const finalMovies = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres });
+    const finalMovies = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres, weightOf: latestSession.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined });
     if (!finalMovies.length) return;
 
     savedRef.current = true;
@@ -3623,7 +3722,7 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   // genres — and crown the top one, listing the rest below as runners-up.
   const heartCounts = {};
   yesMovies.forEach(m => { heartCounts[m.id] = participants.filter(p => p.heart === m.id).length; });
-  const ranked = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres });
+  const ranked = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres, weightOf: latestSession.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined });
   // Top-ranked movie is the proposed pick, but the group can promote a runner-up
   // instead — it becomes the featured card and the rest fall back to runners-up.
   // Server value is the shared truth; pendingChoice covers the gap until it lands.
@@ -3859,10 +3958,17 @@ const PRICE_LABEL = {
 // (≈ swipe time) or the scheduled same-day time.
 async function discoverRestaurants(session) {
   const participants = session.participants || [];
-  const allVetoes = [...new Set(participants.flatMap(p => p.vetoCuisines || []))];
+  // Async (plan-ahead): the deck is defined by the HOST's ranked cuisines alone —
+  // guests only re-rank that same set (steers results, not the deck), no vetoes.
+  const admin = participants.find(p => p.id === session.adminId);
+  const allVetoes = session.asyncMode
+    ? []
+    : [...new Set(participants.flatMap(p => p.vetoCuisines || []))];
   const vetoSet = new Set(allVetoes);
   // Vetoes win over picks: a cuisine someone vetoed is dropped from the search union.
-  const cuisines = [...new Set(participants.flatMap(p => p.cuisines || []))].filter(c => !vetoSet.has(c));
+  const cuisines = session.asyncMode
+    ? (admin?.cuisines || [])
+    : [...new Set(participants.flatMap(p => p.cuisines || []))].filter(c => !vetoSet.has(c));
   const searchCuisines = cuisines.length ? cuisines : ["restaurants"];
 
   const c = session.criteria || {};
@@ -3942,11 +4048,18 @@ function FoodNightScreen({ onCreateSession, onJoinSession, onScanQR }) {
 function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }) {
   const isAdmin = session.adminId === userId;
   const participantCount = session.participants?.length || 1;
-  const maxCuisines = participantCount > 3 ? 2 : 3;
+  // Async mirrors NetPix: host picks + ranks 3 cuisines (which define the deck),
+  // guests re-rank that same shared list, no veto. Live keeps own picks + veto.
+  const isAsync = !!session.asyncMode;
+  const isAsyncHost = isAsync && isAdmin;
+  const isAsyncGuest = isAsync && !isAdmin;
+  const hostCuisines = session.participants?.find(p => p.id === session.adminId)?.cuisines || [];
+  const maxCuisines = isAsync ? 3 : (participantCount > 3 ? 2 : 3);
 
   // Per-participant taste
   const [cuisines, setCuisines] = useState([]);
-  const [vetoes, setVetoes] = useState([]); // 1 veto
+  const [ranking, setRanking] = useState(isAsyncGuest ? hostCuisines : []); // ordered (async)
+  const [vetoes, setVetoes] = useState([]); // 1 veto (live only)
   // Admin-only shared location criteria
   const [zip, setZip] = useState(profile?.zip || session.criteria?.zip || "");
   const [mode, setMode] = useState(session.criteria?.mode || "delivery");
@@ -3986,6 +4099,25 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   const [latestSession, setLatestSession] = useState(session);
   const [genError, setGenError] = useState("");
 
+  // Async ranking sync — see the movie prefs screen for the rationale.
+  useEffect(() => {
+    if (!isAsyncHost) return;
+    setRanking(prev => {
+      const kept = prev.filter(c => cuisines.includes(c));
+      const added = cuisines.filter(c => !kept.includes(c));
+      return [...kept, ...added];
+    });
+  }, [cuisines, isAsyncHost]);
+  const hostCuisinesKey = hostCuisines.join("|");
+  useEffect(() => {
+    if (!isAsyncGuest) return;
+    setRanking(prev =>
+      prev.length === hostCuisines.length && prev.every(c => hostCuisines.includes(c))
+        ? prev : hostCuisines);
+  }, [hostCuisinesKey, isAsyncGuest]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const finalCuisines = isAsync ? ranking : cuisines;
+
   const MAX_VETOES = 1;
   const toggleCuisine = c => {
     setVetoes(prev => prev.filter(x => x !== c));
@@ -4014,7 +4146,14 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
         // Atomic top-level set — doesn't touch participants, so late joins or
         // submits landing mid-generation survive (see the movie flow).
         patchSession(sess.id, { set: { restaurants: data.restaurants, foodReady: true } })
-          .then(updated => { if (mountedRef.current) onReady(updated || { ...sess, restaurants: data.restaurants, foodReady: true }); });
+          .then(updated => {
+            if (!mountedRef.current) return;
+            const next = updated || { ...sess, restaurants: data.restaurants, foodReady: true };
+            // See the movie flow: the async host / a not-yet-ranked generator stays put.
+            const isAsyncAdmin = sess.asyncMode && sess.adminId === userId;
+            if (submittedRef.current && !isAsyncAdmin) onReady(next);
+            else setLatestSession(next);
+          });
       });
     };
 
@@ -4032,13 +4171,17 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
       }
     }
     setLatestSession(s);
-    if (s.restaurants?.length > 0 || s.foodReady) { onReady(s); return; }
+    // Advance only once I've ranked; never auto-advance the async host (they leave
+    // the share screen deliberately). See the movie prefs screen for the reasoning.
+    const meDone = submittedRef.current || s.participants?.find(p => p.id === userId)?.prefsDone;
+    const isAsyncAdmin = s.asyncMode && s.adminId === userId;
+    if ((s.restaurants?.length > 0 || s.foodReady) && meDone && !isAsyncAdmin) { onReady(s); return; }
     const allDone = s.participants.every(p => p.prefsDone);
     if (s.asyncMode) {
-      // Plan-ahead: any device may generate once the roster's full and everyone
-      // answered; the DO-side claim elects exactly one generator.
-      const rosterFull = (s.participants?.length || 0) >= (s.expectedCount || 2);
-      if (allDone && rosterFull && !generatingRef.current) {
+      // Plan-ahead: the deck is defined by the HOST's ranked cuisines, so generate as
+      // soon as the host has answered — guests join and swipe an already-built deck.
+      const hostDone = !!s.participants?.find(p => p.id === s.adminId)?.prefsDone;
+      if (hostDone && !s.foodReady && !generatingRef.current) {
         claimSessionLock(session.id, "restaurants").then(ok => { if (ok) generateAndAdvance(s); });
       }
     } else if (s.adminId === userId) {
@@ -4053,10 +4196,10 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
     ?.filter(p => p.id !== userId).every(p => p.prefsDone) ?? true);
 
   const submit = () => {
-    if (!cuisines.length) return alert("Pick at least one cuisine");
+    if (!finalCuisines.length) return alert("Pick at least one cuisine");
     if (isAdmin && !/^\d{5}$/.test(zip.trim())) return alert("Enter a valid 5-digit ZIP code");
     track("mn_prefs_submit", { activity: "foodpix", role: isAdmin ? "admin" : "guest" });
-    const myPatch = { id: userId, cuisines, vetoCuisines: vetoes, prefsDone: true };
+    const myPatch = { id: userId, cuisines: finalCuisines, vetoCuisines: isAsync ? [] : vetoes, prefsDone: true };
     const adminCriteria = {
       zip: zip.trim(), mode, minRating, distanceMi, allowedPrices,
       when: when === "now" ? "now" : scheduledTime,
@@ -4105,12 +4248,21 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
     || (latestSession.participants?.length || 0) >= (latestSession.expectedCount || 2);
   const myEntry = latestSession.participants?.find(p => p.id === userId);
   const iAmDone = submitted || myEntry?.prefsDone;
+  const deckReady = (latestSession.restaurants?.length || 0) > 0 || latestSession.foodReady;
 
   if (iAmDone) {
     return (
       <div style={{ paddingTop:40, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
         <div style={{ marginBottom:4 }}><Ico name="hourglass" size={40} color={C.muted} stroke={1.5} /></div>
         <h2 style={{ margin:0 }}>{latestSession.asyncMode && !rosterFull ? "Invite your crew" : "Waiting for everyone…"}</h2>
+        {isAsyncHost && deckReady && (
+          <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
+            <Btn big onClick={() => onReady(latestSession)}>Start swiping →</Btn>
+            <div style={{ textAlign:"center", fontSize:12, color:C.muted }}>
+              Your restaurant list is ready. Share the link below, then swipe whenever you like.
+            </div>
+          </div>
+        )}
         <div style={{ width:"100%", background:C.card, borderRadius:12, padding:16, border:`1px solid ${C.border}` }}>
           {latestSession.participants?.map(p => (
             <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:`1px solid ${C.border}` }}>
@@ -4122,8 +4274,8 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
             </div>
           ))}
         </div>
-        {latestSession.asyncMode && !(allDone && rosterFull) && <AsyncWaitingExtras session={latestSession} userId={userId} onAction={poke} />}
-        {allDone && rosterFull && !genError && <div style={{ color:C.muted, fontSize:13 }}>Finding restaurants…</div>}
+        {latestSession.asyncMode && <AsyncWaitingExtras session={latestSession} userId={userId} onAction={poke} />}
+        {!latestSession.asyncMode && allDone && rosterFull && !genError && <div style={{ color:C.muted, fontSize:13 }}>Finding restaurants…</div>}
         {genError && <div style={{ color:C.red, fontSize:13, background:C.redSoft, borderRadius:8, padding:"10px 14px", textAlign:"center" }}>{genError}</div>}
       </div>
     );
@@ -4161,22 +4313,46 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
         </>
       )}
 
-      <Field label={`Cuisines (pick up to ${maxCuisines})`} required>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-          {FOOD_CUISINES.map(c => (
-            <Chip key={c} active={cuisines.includes(c)} onClick={() => toggleCuisine(c)}>{c}</Chip>
-          ))}
-        </div>
-      </Field>
+      {/* Async guest: rank the host's shared cuisines instead of picking your own. */}
+      {isAsyncGuest ? (
+        <Field label="Rank by preference" required>
+          <RankList order={ranking} onChange={setRanking} accentColor={C.green} />
+          <div style={{ fontSize:12, color:C.muted, marginTop:6 }}>
+            1st counts most toward the winner, 3rd the least.
+          </div>
+        </Field>
+      ) : (
+        <>
+          <Field label={isAsync ? `Cuisines (pick ${maxCuisines})` : `Cuisines (pick up to ${maxCuisines})`} required>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {FOOD_CUISINES.map(c => (
+                <Chip key={c} active={cuisines.includes(c)} onClick={() => toggleCuisine(c)}
+                  disabled={!cuisines.includes(c) && cuisines.length >= maxCuisines}>{c}</Chip>
+              ))}
+            </div>
+          </Field>
 
-      <Field label="Veto (optional)">
-        <div style={{ fontSize:12, color:C.muted, marginBottom:6 }}>A vetoed cuisine is excluded even if someone else picked it.</div>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-          {FOOD_CUISINES.map(c => (
-            <Chip key={c} active={vetoes.includes(c)} onClick={() => toggleVeto(c)} accentColor={C.red}>{c}</Chip>
-          ))}
-        </div>
-      </Field>
+          {isAsyncHost && ranking.length > 1 && (
+            <Field label="Rank your cuisines">
+              <RankList order={ranking} onChange={setRanking} accentColor={C.green} />
+              <div style={{ fontSize:12, color:C.muted, marginTop:6 }}>
+                1st counts most toward the winner, 3rd the least.
+              </div>
+            </Field>
+          )}
+
+          {!isAsync && (
+            <Field label="Veto (optional)">
+              <div style={{ fontSize:12, color:C.muted, marginBottom:6 }}>A vetoed cuisine is excluded even if someone else picked it.</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                {FOOD_CUISINES.map(c => (
+                  <Chip key={c} active={vetoes.includes(c)} onClick={() => toggleVeto(c)} accentColor={C.red}>{c}</Chip>
+                ))}
+              </div>
+            </Field>
+          )}
+        </>
+      )}
 
       {isAdmin && (
         <>
@@ -4278,7 +4454,9 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
           Waiting for other participants to pick their cuisines…
         </div>
       )}
-      <Btn onClick={submit} big disabled={!cuisines.length || (isAdmin && !otherParticipantsDone)}>Confirm Cuisines →</Btn>
+      <Btn onClick={submit} big disabled={(isAsyncHost ? cuisines.length < maxCuisines : !finalCuisines.length) || (isAdmin && !otherParticipantsDone)}>
+        {isAsyncGuest ? "Confirm Ranking →" : "Confirm Cuisines →"}
+      </Btn>
     </div>
   );
 }
@@ -4744,7 +4922,7 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   // ── Final pick + runners-up ──
   // Rank the agreed spots — most hearts, then higher rating, then most matched
   // cuisines — and crown the top one, listing the rest below as runners-up.
-  const ranked = rankFinalists(agreed, participants, { ratingOf: r => r.rating, tagsOf: r => r.matchedCuisines, pickedOf: p => p.cuisines });
+  const ranked = rankFinalists(agreed, participants, { ratingOf: r => r.rating, tagsOf: r => r.matchedCuisines, pickedOf: p => p.cuisines, weightOf: latest.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined });
   // Top-ranked spot is the proposed pick, but the group can promote a runner-up
   // instead — whichever is chosen becomes the featured card and the rest drop back
   // into the runners-up list. Server value is shared truth; pending covers the gap.
@@ -4826,6 +5004,89 @@ const inputStyle = {
   padding:"10px 14px", color:C.text, fontSize:15, outline:"none",
   boxSizing:"border-box",
 };
+
+// Drag-to-reorder ranking list (touch + mouse via Pointer Events). Used by async
+// prefs: everyone orders the SAME shared genres/cuisines by preference, and the
+// position drives results scoring (1st=2, 2nd=1, 3rd=0 — see rankWeight). Controlled
+// by `order` (the current top-to-bottom ranking); calls onChange(next) on every move.
+// Reorders by whole-row steps as the dragged row's center crosses a slot, and keeps
+// the row pinned under the finger by re-baselining startY after each reflow.
+const RANK_ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+function RankList({ order, onChange, accentColor }) {
+  const ac = accentColor || C.accent;
+  const ROW_H = 50, GAP = 8, STEP = ROW_H + GAP;
+  const dragRef = useRef(null);       // { item, startY, dy } while dragging, else null
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const [, force] = useState(0);
+  const rerender = () => force(n => n + 1);
+
+  const down = (e, item) => {
+    e.preventDefault();
+    dragRef.current = { item, startY: e.clientY, dy: 0 };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* unsupported */ }
+    rerender();
+  };
+  const move = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const cur = orderRef.current;
+    const from = cur.indexOf(d.item);
+    const dy = e.clientY - d.startY;
+    const to = Math.max(0, Math.min(cur.length - 1, Math.round((from * STEP + dy) / STEP)));
+    if (to !== from) {
+      const next = [...cur];
+      next.splice(from, 1);
+      next.splice(to, 0, d.item);
+      d.startY += (to - from) * STEP; // re-baseline so the row stays under the finger
+      onChange?.(next);
+    }
+    d.dy = e.clientY - d.startY;
+    rerender();
+  };
+  const up = () => { dragRef.current = null; rerender(); };
+
+  const dragItem = dragRef.current?.item;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: GAP }}>
+      {order.map((item, i) => {
+        const dragging = item === dragItem;
+        return (
+          <div
+            key={item}
+            onPointerDown={(e) => down(e, item)}
+            onPointerMove={move}
+            onPointerUp={up}
+            onPointerCancel={up}
+            style={{
+              display: "flex", alignItems: "center", gap: 12,
+              height: ROW_H, padding: "0 12px", boxSizing: "border-box",
+              borderRadius: 12, background: C.card,
+              border: `1.5px solid ${dragging ? ac : C.border}`,
+              boxShadow: dragging ? "0 8px 22px rgba(0,0,0,0.16)" : "none",
+              transform: dragging ? `translateY(${dragRef.current.dy}px) scale(1.02)` : "none",
+              transition: dragging ? "none" : "transform 0.18s ease, border-color 0.15s",
+              zIndex: dragging ? 5 : 1, position: "relative",
+              touchAction: "none", cursor: dragging ? "grabbing" : "grab",
+              userSelect: "none", WebkitUserSelect: "none",
+            }}
+          >
+            <div style={{
+              width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+              background: `${ac}18`, color: ac, fontSize: 12, fontWeight: 800,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>{i + 1}</div>
+            <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: C.text }}>{item}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 0.4 }}>
+              {RANK_ORDINALS[i] || `${i + 1}th`}
+            </span>
+            <Ico name="grip" size={18} color={C.muted} filled style={{ marginLeft: 2 }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function Field({ label, required, children }) {
   return (
