@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyStreamingFilter, rankFinalists, movieAgreedPool, foodAgreedPool, GENRES, LANGUAGES, SERVICES, PROVIDER_MAP } from './utils.js';
+import { applyStreamingFilter, rankFinalists, rankWeight, movieAgreedPool, foodAgreedPool, GENRES, LANGUAGES, SERVICES, PROVIDER_MAP } from './utils.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -286,6 +286,44 @@ describe('rankFinalists', () => {
   it('handles null rating and missing tags without throwing', () => {
     const items = [{ id: 'a', imdb: null, genres: null }, { id: 'b', imdb: undefined, genres: [] }];
     expect(() => rankFinalists(items, [{ id: 'p' }], opts)).not.toThrow();
+  });
+
+  // Async ranked-preference weighting: everyone ranks the SAME shared genres, so the
+  // tiebreak is position-weighted (1st=2, 2nd=1, 3rd=0) instead of a flat match count.
+  it('weights matched tags by ranked position when weightOf is supplied', () => {
+    const items = [
+      { id: 'm1', imdb: 7, genres: ['Drama'] },  // matches everyone's TOP pick
+      { id: 'm2', imdb: 7, genres: ['Comedy'] }, // matches everyone's 2nd pick
+    ];
+    const parts = [
+      { id: 'p1', picks: ['Drama', 'Comedy', 'Action'] },
+      { id: 'p2', picks: ['Drama', 'Comedy', 'Action'] },
+    ];
+    const weighted = { ...opts, weightOf: (_p, _t, idx) => rankWeight(idx) };
+    // m1 = 2+2 = 4 (top pick ×2), m2 = 1+1 = 2 (second pick ×2)
+    expect(rankFinalists(items, parts, weighted)[0].id).toBe('m1');
+    // Without weightOf it's a flat count — both match once each, so order is stable.
+    expect(rankFinalists(items, parts, opts).map(m => m.id)).toEqual(['m1', 'm2']);
+  });
+
+  it('third-ranked pick (0 points) cannot outweigh a first-ranked one', () => {
+    const items = [
+      { id: 'top',  imdb: 7, genres: ['Action'] },  // one person's 1st (2 pts)
+      { id: 'last', imdb: 7, genres: ['Horror'] },  // three people's 3rd (0 pts each)
+    ];
+    const parts = [
+      { id: 'p1', picks: ['Action', 'Drama', 'Horror'] },
+      { id: 'p2', picks: ['Comedy', 'Drama', 'Horror'] },
+      { id: 'p3', picks: ['Comedy', 'Drama', 'Horror'] },
+    ];
+    const weighted = { ...opts, weightOf: (_p, _t, idx) => rankWeight(idx) };
+    expect(rankFinalists(items, parts, weighted)[0].id).toBe('top');
+  });
+});
+
+describe('rankWeight', () => {
+  it('maps rank position to 2 / 1 / 0 and 0 beyond', () => {
+    expect([0, 1, 2, 3, 4].map(rankWeight)).toEqual([2, 1, 0, 0, 0]);
   });
 });
 
