@@ -85,33 +85,59 @@ export function applyStreamingFilter(pool, criteria, tmdbData) {
 export const RANK_POINTS = [2, 1, 0];
 export const rankWeight = (idx) => RANK_POINTS[idx] ?? 0;
 
+// Sum, across the given participants, the weight of every pick that matches this
+// item's tags. `w(p, tag, idx)` scores a single matched pick (idx = its rank in that
+// participant's ordered picks). Shared by the group and host-only preference scores.
+function weightedMatch(it, participants, tagsOf, pickedOf, w) {
+  const tags = (tagsOf(it) || []).map(t => String(t).toLowerCase());
+  if (!tags.length) return 0;
+  return participants.reduce((sum, p) => {
+    const picked = pickedOf(p) || [];
+    return sum + picked.reduce((s2, t, idx) =>
+      tags.includes(String(t).toLowerCase()) ? s2 + w(p, t, idx) : s2, 0);
+  }, 0);
+}
+
+// Deterministic, well-distributed 32-bit hash of a string → used as a STABLE random
+// tiebreak (same order every render/device, but arbitrary w.r.t. quality). Salt with
+// the session id so different sessions break identical ties differently.
+function hashStr(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0);
+}
+
 // ─── Results decision logic ───────────────────────────────────────────────────
 // Order the agreed finalists for the results screen, picking a single winner.
-// Most hearts wins first (hearts are the primary narrowing signal); ties break
-// by higher rating, then by how well the item matches user-picked criteria
-// (genres for movies, cuisines for restaurants — summed across all participants).
 //
-// `weightOf(p, tag, idx)` scores a single matched pick. It defaults to 1 per match
-// (the live/legacy "count how many people picked a matching tag" tiebreak). Async
-// results pass a position-weighted variant (see rankWeight) so a finalist matching
-// people's TOP-ranked genres/cuisines outranks one matching their lowest.
-export function rankFinalists(items, participants, { ratingOf, tagsOf, pickedOf, weightOf }) {
+// LIVE sessions: most hearts wins first (hearts are the primary narrowing signal);
+// ties break by higher rating, then by how well the item matches user-picked criteria
+// (`weightOf` defaults to 1 per match — a plain "how many people picked a matching
+// tag" count).
+//
+// ASYNC sessions (`voteOf` supplied): there is no heart round. Rank by swipe YES-count
+// first, then the group's position-weighted preference score (`weightOf` = rankWeight,
+// so top-ranked genres/cuisines count most), then the HOST's own ranking as the
+// tiebreak (`hostId`), and finally a stable per-session random pick among anything
+// still tied (`randSalt`). Rating is deliberately NOT a tiebreak in async.
+export function rankFinalists(items, participants, { ratingOf, tagsOf, pickedOf, weightOf, voteOf, hostId, randSalt = "" }) {
   const heartOf = it => participants.filter(p => p.heart === it.id).length;
   const w = weightOf || (() => 1);
-  const matchOf = (it) => {
-    const tags = (tagsOf(it) || []).map(t => String(t).toLowerCase());
-    if (!tags.length) return 0;
-    return participants.reduce((sum, p) => {
-      const picked = pickedOf(p) || [];
-      return sum + picked.reduce((s2, t, idx) =>
-        tags.includes(String(t).toLowerCase()) ? s2 + w(p, t, idx) : s2, 0);
-    }, 0);
-  };
-  return [...items].sort((a, b) =>
-    heartOf(b) - heartOf(a) ||
-    (ratingOf(b) || 0) - (ratingOf(a) || 0) ||
-    matchOf(b) - matchOf(a)
-  );
+  const groupMatch = it => weightedMatch(it, participants, tagsOf, pickedOf, w);
+  const hostParts = hostId ? participants.filter(p => p.id === hostId) : [];
+  const hostMatch = it => hostParts.length ? weightedMatch(it, hostParts, tagsOf, pickedOf, w) : 0;
+  const randOf = it => hashStr(`${randSalt}:${it.id}`);
+  return [...items].sort((a, b) => {
+    if (voteOf) {
+      return (voteOf(b) - voteOf(a)) ||          // swipes
+        (groupMatch(b) - groupMatch(a)) ||       // group preference score
+        (hostMatch(b) - hostMatch(a)) ||         // host's ranking breaks pref ties
+        (randOf(a) - randOf(b));                 // stable random among true ties
+    }
+    return (heartOf(b) - heartOf(a)) ||
+      ((ratingOf(b) || 0) - (ratingOf(a) || 0)) ||
+      (groupMatch(b) - groupMatch(a));
+  });
 }
 
 // Compute the pool of movies the group "agreed" on: prefer unanimous yes, else a

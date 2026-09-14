@@ -306,6 +306,50 @@ describe('rankFinalists', () => {
     expect(rankFinalists(items, parts, opts).map(m => m.id)).toEqual(['m1', 'm2']);
   });
 
+  // Async chain: swipes → group preference → host's ranking → stable random.
+  it('async ranks by swipe yes-count first', () => {
+    const items = [{ id: 'a', imdb: 9, genres: ['Drama'] }, { id: 'b', imdb: 5, genres: ['Comedy'] }];
+    const parts = [
+      { id: 'p1', picks: ['Drama', 'Comedy', 'Action'], votes: { b: 'yes' } },
+      { id: 'p2', picks: ['Drama', 'Comedy', 'Action'], votes: { b: 'yes', a: 'yes' } },
+    ];
+    const async = {
+      ...opts,
+      weightOf: (_p, _t, idx) => rankWeight(idx),
+      voteOf: it => parts.filter(p => p.votes?.[it.id] === 'yes').length,
+      randSalt: 's1',
+    };
+    // b has 2 yes vs a's 1 — b wins despite lower rating and matching only 2nd picks.
+    expect(rankFinalists(items, parts, async)[0].id).toBe('b');
+  });
+
+  it("async breaks a swipe+preference tie by the host's ranking", () => {
+    const items = [{ id: 'a', imdb: 7, genres: ['Comedy'] }, { id: 'b', imdb: 7, genres: ['Drama'] }];
+    // Mirror-image rankings → equal group score (Comedy 2+1 = 3, Drama 1+2 = 3), same
+    // votes. The host ranks Drama above Comedy, so b (Drama) wins the tiebreak.
+    const parts = [
+      { id: 'host', picks: ['Drama', 'Comedy', 'Action'], votes: { a: 'yes', b: 'yes' } }, // Drama 2, Comedy 1
+      { id: 'g1', picks: ['Comedy', 'Drama', 'Action'], votes: { a: 'yes', b: 'yes' } },   // Comedy 2, Drama 1
+    ];
+    const async = {
+      ...opts,
+      weightOf: (_p, _t, idx) => rankWeight(idx),
+      voteOf: it => parts.filter(p => p.votes?.[it.id] === 'yes').length,
+      hostId: 'host',
+      randSalt: 's1',
+    };
+    expect(rankFinalists(items, parts, async)[0].id).toBe('b');
+  });
+
+  it('async falls back to a STABLE random pick among true ties', () => {
+    const items = [{ id: 'x', imdb: 7, genres: [] }, { id: 'y', imdb: 7, genres: [] }];
+    const parts = [{ id: 'p1', picks: [], votes: { x: 'yes', y: 'yes' } }];
+    const async = { ...opts, voteOf: it => parts.filter(p => p.votes?.[it.id] === 'yes').length, randSalt: 'sess-42' };
+    const first = rankFinalists(items, parts, async).map(m => m.id);
+    // Deterministic: same salt → same order every call (no flicker across polls).
+    expect(rankFinalists(items, parts, async).map(m => m.id)).toEqual(first);
+  });
+
   it('third-ranked pick (0 points) cannot outweigh a first-ranked one', () => {
     const items = [
       { id: 'top',  imdb: 7, genres: ['Action'] },  // one person's 1st (2 pts)
