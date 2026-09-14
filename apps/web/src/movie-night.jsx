@@ -3959,6 +3959,10 @@ const FOOD_CUISINES = [
   "BBQ", "Seafood", "Vegan", "Breakfast", "Dessert",
 ];
 
+// Day-of-week labels indexed 0=Sun..6=Sat to match JS Date.getDay() and the Worker's
+// `day` param (restaurant hours vary by day, so scheduled orders can pick one).
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 const PRICE_LABEL = {
   PRICE_LEVEL_INEXPENSIVE: "$",
   PRICE_LEVEL_MODERATE: "$$",
@@ -3993,6 +3997,8 @@ async function discoverRestaurants(session) {
   if (c.when && c.when !== "now") {
     const [h, m] = c.when.split(":").map(Number);
     if (Number.isFinite(h) && Number.isFinite(m)) minute = h * 60 + m;
+    // Scheduled orders can target a specific weekday (restaurant hours vary by day).
+    if (Number.isFinite(c.whenDay)) day = c.whenDay;
   }
   const params = new URLSearchParams({
     zip: c.zip || "",
@@ -4089,6 +4095,8 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
   );
   const [when, setWhen] = useState("now");
   const [scheduledTime, setScheduledTime] = useState("19:00");
+  const [scheduledDay, setScheduledDay] = useState(() =>
+    Number.isFinite(session.criteria?.whenDay) ? session.criteria.whenDay : new Date().getDay());
   // Optional dine-in narrowing (only used when mode === "dine_in")
   const [reservable, setReservable] = useState(!!session.criteria?.reservable);
   const [outdoorSeating, setOutdoorSeating] = useState(!!session.criteria?.outdoorSeating);
@@ -4218,6 +4226,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
     const adminCriteria = {
       zip: zip.trim(), mode, minRating, distanceMi, allowedPrices,
       when: when === "now" ? "now" : scheduledTime,
+      whenDay: when === "now" ? null : scheduledDay,
       reservable, outdoorSeating, servesAlcohol, goodForGroups, vegetarian,
       dogs, liveMusic, sports, dessert, kidsMenu, diningStyle,
     };
@@ -4392,7 +4401,7 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
 
           <Field label={mode === "dine_in" ? "When are you dining?" : "When are you ordering?"}>
             <div style={{ display:"flex", gap:8, marginBottom: when === "now" ? 0 : 10 }}>
-              {[{v:"now",l: mode === "dine_in" ? "Dining now" : "Order now"},{v:"later",l:"Schedule (today)"}].map(opt => (
+              {[{v:"now",l: mode === "dine_in" ? "Dining now" : "Order now"},{v:"later",l:"Schedule"}].map(opt => (
                 <button key={opt.v} onClick={() => setWhen(opt.v === "now" ? "now" : "later")}
                   style={{ flex:1, padding:"10px 8px", borderRadius:10, border:`1.5px solid ${(when==="now") === (opt.v==="now") ? C.accent : C.border}`, background:(when==="now")===(opt.v==="now") ? C.accentSoft : "transparent", color:(when==="now")===(opt.v==="now") ? C.accent : C.text, cursor:"pointer", fontSize:13, fontWeight:600 }}>
                   {opt.l}
@@ -4400,11 +4409,19 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
               ))}
             </div>
             {when !== "now" && (
-              <input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)}
-                style={{ ...inputStyle, fontSize:16 }} />
+              <div style={{ display:"flex", gap:8 }}>
+                <select value={scheduledDay} onChange={e => setScheduledDay(Number(e.target.value))}
+                  style={{ ...inputStyle, flex:1, fontSize:16, appearance:"none", WebkitAppearance:"none", backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E")`, backgroundRepeat:"no-repeat", backgroundPosition:"right 12px center", paddingRight:30 }}>
+                  {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                </select>
+                <input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)}
+                  style={{ ...inputStyle, flex:1, fontSize:16 }} />
+              </div>
             )}
             <div style={{ fontSize:11, color:C.muted, marginTop:6 }}>
-              We only show places that'll still be open at least 45 minutes after your {mode === "dine_in" ? "dining" : "order"} time.
+              {when === "now"
+                ? `We only show places that'll still be open at least 45 minutes after your ${mode === "dine_in" ? "dining" : "order"} time.`
+                : "Select day and time so results only show restaurants that will be open."}
             </div>
           </Field>
 
