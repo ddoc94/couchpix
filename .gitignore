@@ -17,6 +17,11 @@ dist/
 # Claude Code tooling
 .claude/
 
+# Internal docs — kept on-disk (CLAUDE.md still auto-loads for Claude), out of
+# the public repo. Anchored to the root so nested READMEs are unaffected.
+/CLAUDE.md
+/ROADMAP.md
+
 # iOS / Capacitor generated artifacts (regenerate via pod install / cap sync)
 apps/mobile/ios/App/Pods/
 apps/mobile/ios/App/build/
