@@ -2402,6 +2402,10 @@ function PreferencesScreen({ session, userId, profile, setProfile, onMoviesReady
       {/* Async guest: no picker — just rank the host's shared genres. */}
       {isAsyncGuest ? (
         <Field label="Rank by preference" required>
+          <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10, lineHeight: 1.5 }}>
+            New here? Drag to order these, then swipe a shared list of movies. Your
+            ranking helps decide the winner when the group is split.
+          </div>
           <RankList order={ranking} onChange={setRanking} />
           <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
             1st counts most toward the winner, 3rd the least.
@@ -3402,6 +3406,11 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
       const allSwipeDone = s.participants.every(p => p.done);
       if (!allSwipeDone) { setPhase("waiting"); return; }
 
+      // Async has NO heart round — narrowing rounds each cost another day of waiting.
+      // Go straight to the final ranking (swipes → preference → host order → random),
+      // which proposes a winner + runners-up the group can still override.
+      if (s.asyncMode) { setPhase("final"); return; }
+
       // The agreed pool is the SAME set the final screen ranks (unanimous → majority
       // → passion). Keying the heart gate off this — not just unanimous — means a
       // majority pool of >2 also forces a heart round, so the group is never dumped
@@ -3496,7 +3505,10 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
     const movies = latestSession.movies || [];
     const yesMovies = movieAgreedPool(latestSession);
 
-    const finalMovies = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres, weightOf: latestSession.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined });
+    const finalMovies = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres,
+      weightOf: latestSession.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined,
+      voteOf: latestSession.asyncMode ? m => participants.filter(p => p.votes?.[m.id] === "yes").length : undefined,
+      hostId: latestSession.asyncMode ? latestSession.adminId : undefined, randSalt: latestSession.id });
     if (!finalMovies.length) return;
 
     savedRef.current = true;
@@ -3722,7 +3734,10 @@ function ResultsScreen({ session, userId, profile, setProfile, onRestart, onHome
   // genres — and crown the top one, listing the rest below as runners-up.
   const heartCounts = {};
   yesMovies.forEach(m => { heartCounts[m.id] = participants.filter(p => p.heart === m.id).length; });
-  const ranked = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres, weightOf: latestSession.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined });
+  const ranked = rankFinalists(yesMovies, participants, { ratingOf: m => m.imdb, tagsOf: m => m.genres, pickedOf: p => p.genres,
+    weightOf: latestSession.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined,
+    voteOf: latestSession.asyncMode ? m => participants.filter(p => p.votes?.[m.id] === "yes").length : undefined,
+    hostId: latestSession.asyncMode ? latestSession.adminId : undefined, randSalt: latestSession.id });
   // Top-ranked movie is the proposed pick, but the group can promote a runner-up
   // instead — it becomes the featured card and the rest fall back to runners-up.
   // Server value is the shared truth; pendingChoice covers the gap until it lands.
@@ -4316,6 +4331,10 @@ function FoodPreferencesScreen({ session, userId, profile, setProfile, onReady }
       {/* Async guest: rank the host's shared cuisines instead of picking your own. */}
       {isAsyncGuest ? (
         <Field label="Rank by preference" required>
+          <div style={{ fontSize:12.5, color:C.muted, marginBottom:10, lineHeight:1.5 }}>
+            New here? Drag to order these, then swipe a shared list of places. Your
+            ranking helps decide the winner when the group is split.
+          </div>
           <RankList order={ranking} onChange={setRanking} accentColor={C.green} />
           <div style={{ fontSize:12, color:C.muted, marginTop:6 }}>
             1st counts most toward the winner, 3rd the least.
@@ -4762,6 +4781,9 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
     const allSwipeDone = (s.participants || []).every(p => p.done);
     if (!allSwipeDone) { setPhase("waiting"); return; }
 
+    // Async has NO heart round — straight to the final ranking. See ResultsScreen.
+    if (s.asyncMode) { setPhase("final"); return; }
+
     const agreedIds = foodAgreedPool(s).map(r => r.id);
     if (agreedIds.length <= 2) { setPhase("final"); return; }
 
@@ -4922,7 +4944,10 @@ function FoodResultsScreen({ session, userId, onRestart, onRoundReset, onHome })
   // ── Final pick + runners-up ──
   // Rank the agreed spots — most hearts, then higher rating, then most matched
   // cuisines — and crown the top one, listing the rest below as runners-up.
-  const ranked = rankFinalists(agreed, participants, { ratingOf: r => r.rating, tagsOf: r => r.matchedCuisines, pickedOf: p => p.cuisines, weightOf: latest.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined });
+  const ranked = rankFinalists(agreed, participants, { ratingOf: r => r.rating, tagsOf: r => r.matchedCuisines, pickedOf: p => p.cuisines,
+    weightOf: latest.asyncMode ? (_p, _t, idx) => rankWeight(idx) : undefined,
+    voteOf: latest.asyncMode ? r => participants.filter(p => p.votes?.[r.id] === "yes").length : undefined,
+    hostId: latest.asyncMode ? latest.adminId : undefined, randSalt: latest.id });
   // Top-ranked spot is the proposed pick, but the group can promote a runner-up
   // instead — whichever is chosen becomes the featured card and the rest drop back
   // into the runners-up list. Server value is shared truth; pending covers the gap.
